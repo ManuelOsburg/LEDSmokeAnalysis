@@ -1,4 +1,5 @@
 import os
+from typing import Tuple
 
 import exiv2
 import numpy as np
@@ -83,6 +84,52 @@ def _read_channel_data_from_raw_file(filename: str, channel: int) -> np.ndarray:
     elif channel == 1:
         channel_array = np.where((filter_array == 1) | (filter_array == 3), img_array, 0)
     return channel_array
+
+
+def read_channel_data_and_mask_from_img(filename: str, channel: int) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Returns the same 2D channel array as read_channel_data_from_img together with a boolean mask of the
+    pixels that belong to the selected color channel.
+
+    For RAW files the mask is taken from the Bayer filter pattern (raw_colors_visible) and not from the pixel
+    values, because pixels of the selected channel can be 0 as well (noise clipped at 0 after the black level
+    subtraction). For JPG/PNG files every pixel belongs to the channel.
+
+    :param filename: The path of the image file to read.
+    :type filename: str
+    :param channel: The color channel to process.
+    :type channel: int
+    :return: The channel array and the boolean channel mask of the same shape.
+    :rtype: tuple[np.ndarray, np.ndarray]
+    """
+    extension = os.path.splitext(filename)[-1]
+    if extension in ['.JPG', '.JPEG', '.jpg', '.jpeg', '.PNG', '.png']:
+        channel_array = _read_channel_data_from_img_file(filename, channel)
+        channel_mask = np.ones(channel_array.shape, dtype=bool)
+    elif extension in ['.CR2', '.CR3', '.NEF', '.ARW', '.DNG']:
+        img_array, filter_array = _read_img_array_from_raw_file(filename, channel)
+        channel_mask = get_bayer_channel_mask(filter_array, channel)
+        channel_array = np.where(channel_mask, img_array, 0)
+    else:
+        raise ValueError(f"Unsupported image format '{extension}' of file {filename}.")
+    return channel_array, channel_mask
+
+
+def get_bayer_channel_mask(filter_array: np.ndarray, channel: int) -> np.ndarray:
+    """
+    Returns a boolean mask of the Bayer filter positions that belong to the given color channel.
+    The Bayer array contains two green channels (1 and 3), one red (0) and one blue (2).
+
+    :param filter_array: Bayer filter pattern of the raw image (rawpy raw_colors_visible).
+    :type filter_array: np.ndarray
+    :param channel: The color channel (0 red, 1 green, 2 blue).
+    :type channel: int
+    :return: Boolean mask, True where the pixel belongs to the channel.
+    :rtype: np.ndarray
+    """
+    if channel == 1:
+        return (filter_array == 1) | (filter_array == 3)
+    return filter_array == channel
 
 
 def _read_img_array_from_raw_file(filename: str, channel: int) -> np.ndarray:

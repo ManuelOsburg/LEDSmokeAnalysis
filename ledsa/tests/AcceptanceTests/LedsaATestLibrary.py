@@ -300,6 +300,12 @@ class LedsaATestLibrary:
         conf.save()
 
     @keyword
+    def set_config_option(self, section, option, value):
+        conf = ConfigData()
+        conf.set(section, option, str(value))
+        conf.save()
+
+    @keyword
     def create_and_fill_config_analysis(self, solver, reference_property='sum_col_val'):
         conf = ConfigDataAnalysis(load_config_file=False, camera_position=None, num_layers=20, domain_bounds=None,
                                   led_array_indices=0, num_ref_images=1, camera_channels=0, num_cores=1,

@@ -90,16 +90,31 @@ class TestBackgroundSubtractedSum:
     def test_csv_serialization_contains_bgsub_value(self):
         led_data = extract_led_data(make_synthetic_image(background=10.0))
         main_data_fields = led_data.get_main_data_string().split(',')
-        assert len(main_data_fields) == 6
+        assert len(main_data_fields) >= 6  # further background columns are appended after bgsub
         assert float(main_data_fields[5]) == pytest.approx(led_data.bgsub_sum_color_value, rel=1e-4)
 
 
 class TestColumnNames:
-    def _write_led_positions_csv(self, tmp_path, num_columns):
+    def _write_led_positions_csv(self, tmp_path, num_columns, header='# header'):
         channel_dir = tmp_path / 'analysis' / 'channel0'
         channel_dir.mkdir(parents=True)
         row = ','.join(str(float(i)) for i in range(num_columns))
-        (channel_dir / '1_led_positions.csv').write_text(f'# header\n{row}\n{row}\n')
+        (channel_dir / '1_led_positions.csv').write_text(f'{header}\n{row}\n{row}\n')
+
+    def test_csv_written_by_step_3_is_named_by_header(self, tmp_path, monkeypatch):
+        from ledsa.core.file_handling import _get_column_names
+        from ledsa.data_extraction.step_3_functions import _create_header
+        img_infos = np.array([['1', 'img.jpg', '12:00:00', '0']])
+        header = _create_header(0, '1', 'img.jpg', img_infos, 'root', False).strip()
+        num_columns = len(header.split('\n')[1].split(','))
+        self._write_led_positions_csv(tmp_path, num_columns, header)
+        monkeypatch.chdir(tmp_path)
+        columns = _get_column_names(0)
+        assert columns[:7] == ["img_id", "led_id", "led_array_id", "sum_col_val", "mean_col_val",
+                               "max_col_val", "bgsub_sum_col_val"]
+        assert "sidebg_sum_col_val" in columns and "sidebg_pedestal" in columns
+        assert columns[-2:] == ["width", "height"]
+        assert len(columns) == num_columns + 3
 
     def test_new_csv_with_bgsub_column(self, tmp_path, monkeypatch):
         from ledsa.core.file_handling import _get_column_names

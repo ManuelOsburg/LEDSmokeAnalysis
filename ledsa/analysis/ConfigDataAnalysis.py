@@ -32,7 +32,8 @@ class ConfigDataAnalysis(cp.ConfigParser):
         :type num_cores: int
         :param reference_property: Property used for reference in LEDSA. Defaults to 'sum_col_val'.
             Use 'bgsub_sum_col_val' to base the analysis on intensities with the local background
-            subtracted, estimated from the border of each LED search area.
+            subtracted, estimated from the border of each LED search area. Use 'sidebg_sum_col_val' to subtract the
+            pedestal estimated in side bands next to the LED strip instead.
         :type reference_property: str
         :param average_images: Determines if intensities are computed as an average from two consecutive images. Defaults to False.
         :type average_images: bool
