@@ -79,7 +79,8 @@ class ConfigData(cp.ConfigParser):
         :param sideband_distances: Inner and outer distance in pixels across the LED strip of the side bands used to
             estimate the pedestal for sidebg_sum_col_val. Defaults to '25 60'.
         :type sideband_distances: str
-        :param sideband_floor: Lower limit of sidebg_sum_col_val as fraction of sum_col_val. Defaults to 0.05.
+        :param sideband_floor: Lower limit of sidebg_sum_col_val and bgsub2_sum_col_val as fraction of sum_col_val.
+            Defaults to 0.05.
         :type sideband_floor: float
         :param sideband_exclusion_margin: Side band pixels within search_area_radius + margin of any other search area
             are excluded. Defaults to None, i.e. margin = search_area_radius.

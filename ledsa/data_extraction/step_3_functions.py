@@ -196,7 +196,7 @@ def _generate_led_analysis_data(conf: ConfigData, channel: int, data: np.ndarray
     :type channel_mask: np.ndarray or None
     :param sideband_pixels: Row and column indices of the side band pixels of the LED, None if not available.
     :type sideband_pixels: tuple[np.ndarray, np.ndarray] or None
-    :param sideband_floor: Lower limit of the side band corrected sum as fraction of the box sum.
+    :param sideband_floor: Lower limit of the side band and ring corrected sums as fraction of the box sum.
     :type sideband_floor: float
     :return: Analysis data for the LED.
     :rtype: LEDAnalysisData
@@ -233,9 +233,11 @@ def _generate_led_analysis_data(conf: ConfigData, channel: int, data: np.ndarray
     box_mask = None if channel_mask is None else channel_mask[search_area]
     num_channel_pixels = data[search_area].size if box_mask is None else int(np.count_nonzero(box_mask))
 
-    # border ring as for bgsub, but with the estimator of the side bands: mean over the channel pixels including 0
+    # border ring as for bgsub, but with the estimator of the side bands: mean over the channel pixels including 0;
+    # same lower limit as for the side band correction
     ring_background = _estimate_local_background_mean(data[search_area], box_mask)
-    led_data.bgsub2_sum_color_value = float(led_data.sum_color_value) - num_channel_pixels * ring_background
+    led_data.bgsub2_sum_color_value = subtract_pedestal(float(led_data.sum_color_value),
+                                                        num_channel_pixels * ring_background, sideband_floor)
 
     # b = mean over the channel pixels in the side bands next to the LED strip
     sideband_background = estimate_sideband_background(data, channel_mask, sideband_pixels)

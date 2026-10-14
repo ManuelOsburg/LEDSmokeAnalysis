@@ -62,6 +62,16 @@ class TestBgsub2Sum:
         expected = box(img).sum() - num_channel_pixels * _estimate_local_background_mean(box(img), box(mask))
         assert led_data.bgsub2_sum_color_value == pytest.approx(expected)
 
+    def test_floor_limits_the_corrected_sum(self):
+        # LED shifted to the corner of the box: its light falls into the ring and N * b exceeds the box sum
+        img, mask = make_image(amplitude=0.0)
+        row, col = CENTER[0] - SEARCH_AREA_RADIUS + 1, CENTER[1] - SEARCH_AREA_RADIUS + 1
+        img[row - 1:row + 2, col - 1:col + 2] = 1000.0
+        led_data = analyse(img, mask)
+        num_channel_pixels = np.count_nonzero(box(mask))
+        assert box(img).sum() - num_channel_pixels * _estimate_local_background_mean(box(img), box(mask)) < 0
+        assert led_data.bgsub2_sum_color_value == pytest.approx(0.05 * box(img).sum())
+
     def test_existing_values_are_unchanged(self):
         img, mask = make_image(pedestal=3.0, noise_sigma=2.0, clip=True, bayer_mask=True)
         led_data = analyse(img, mask)
