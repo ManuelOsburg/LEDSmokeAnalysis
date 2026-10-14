@@ -91,5 +91,8 @@ Check Background Results
     ${rmse_sum} =    Check Input Vs Computed Extinction Coefficients    ${image_id}    linear
     ${rmse_sidebg} =    Check Input Vs Computed Extinction Coefficients    ${image_id}    linear
     ...    reference_property=sidebg_sum_col_val
+    # same slack as for bgsub in suite 07: the test data are random and the background clips the LED peaks of
+    # the 8 bit images at 255; in addition the side band correction has to remove most of the bias of the sum
     Should Be True    ${rmse_sum} > 0.05
-    Should Be True    ${rmse_sidebg} < 0.05
+    Should Be True    ${rmse_sidebg} < 0.06
+    Should Be True    ${rmse_sidebg} < 0.5 * ${rmse_sum}
