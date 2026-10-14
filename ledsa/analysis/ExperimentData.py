@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from ledsa.analysis.ConfigDataAnalysis import ConfigDataAnalysis
 from ledsa.analysis.Experiment import Camera, Layers
+from ledsa.analysis.reference_images import DEFAULT_REF_IMG_TOLERANCE
 # Todo: Import init_function for request of missing data
 from ledsa.core.ConfigData import ConfigData
 
@@ -36,6 +37,12 @@ class ExperimentData:
     :type num_ref_images: int
     :ivar ref_img_indices: Indices of reference images to use. If None, use num_ref_imgs.
     :type ref_img_indices: list[int] or None
+    :ivar auto_ref_images: Select the reference images automatically by brightness if ref_img_indices is None.
+    :type auto_ref_images: bool
+    :ivar ref_img_tolerance: Brightness tolerance of the automatic selection.
+    :type ref_img_tolerance: float
+    :ivar num_ref_img_candidates: Number of candidate images of the automatic selection (None: 2 * num_ref_images).
+    :type num_ref_img_candidates: int or None
     :ivar reference_property: Reference property to be analysed.
     :type reference_property: str
     :ivar merge_led_arrays: Merge LED arrays option.
@@ -56,6 +63,9 @@ class ExperimentData:
         self.num_iterations = None
         self.num_ref_images = None
         self.ref_img_indices = None
+        self.auto_ref_images = False
+        self.ref_img_tolerance = DEFAULT_REF_IMG_TOLERANCE
+        self.num_ref_img_candidates = None
         self.lambda_reg = None
         self.reference_property = None
         self.merge_led_arrays = None
@@ -73,6 +83,11 @@ class ExperimentData:
         self.ref_img_indices = config_analysis.get_list_of_values('DEFAULT', 'ref_img_indices')
         if self.ref_img_indices is None:
             self.num_ref_images = int(config_analysis['DEFAULT']['num_ref_images'])
+        self.auto_ref_images = config_analysis.getboolean('DEFAULT', 'auto_ref_images', fallback=False)
+        self.ref_img_tolerance = float(config_analysis.get('DEFAULT', 'ref_img_tolerance',
+                                                           fallback=DEFAULT_REF_IMG_TOLERANCE))
+        num_candidates = config_analysis.get('DEFAULT', 'num_ref_img_candidates', fallback='None')
+        self.num_ref_img_candidates = None if num_candidates == 'None' else int(num_candidates)
         self.solver = config_analysis['DEFAULT']['solver']
         if self.solver == 'nonlinear':
             self.weighting_preference = float(config_analysis['DEFAULT']['weighting_preference'])

@@ -10,7 +10,8 @@ class ConfigDataAnalysis(cp.ConfigParser):
                  led_array_indices=None, num_ref_images=10, ref_img_indices=None, camera_channels=0, num_cores=1,
                  reference_property='sum_col_val',
                  average_images=False, solver='linear', weighting_preference=-6e-3, weighting_curvature=1e-6,
-                 num_iterations=200, lambda_reg=1e-3):
+                 num_iterations=200, lambda_reg=1e-3, auto_ref_images=False, ref_img_tolerance=0.02,
+                 num_ref_img_candidates=None):
         """
         :param load_config_file: Determines whether to load the config file on initialization. Defaults to True.
         :type load_config_file: bool
@@ -26,6 +27,15 @@ class ConfigDataAnalysis(cp.ConfigParser):
         :type num_ref_images: int
         :param ref_img_indices: Indices of reference images to use. If None, use num_ref_imgs.
         :type ref_img_indices: list[int] or None
+        :param auto_ref_images: If ref_img_indices is None, select the reference images automatically by their
+            brightness among the first num_ref_img_candidates images. Defaults to False.
+        :type auto_ref_images: bool
+        :param ref_img_tolerance: Maximum relative deviation of the brightness for the automatic selection.
+            Defaults to 0.02.
+        :type ref_img_tolerance: float
+        :param num_ref_img_candidates: Number of images considered for the automatic selection. Defaults to None,
+            i.e. 2 * num_ref_images.
+        :type num_ref_img_candidates: int or None
         :param camera_channels: Camera channels to be considered in the analysis. Defaults to 0.
         :type camera_channels: List[int]
         :param num_cores: Number of CPU cores for (multicore) processing. If greater than 1, multicore processing is applied. Defaults to 1.
@@ -62,6 +72,11 @@ class ConfigDataAnalysis(cp.ConfigParser):
             self['DEFAULT']['   num_ref_images'] = str(num_ref_images)
             self.set('DEFAULT', '   # Indices of reference images to use')
             self['DEFAULT']['   ref_img_indices'] = str(ref_img_indices)
+            self.set('DEFAULT', '   # If ref_img_indices is None: select num_ref_images reference images automatically by their brightness')
+            self.set('DEFAULT', '   # (relative deviation <= ref_img_tolerance) among the first num_ref_img_candidates images (None: 2 * num_ref_images)')
+            self['DEFAULT']['   auto_ref_images'] = str(auto_ref_images)
+            self['DEFAULT']['   ref_img_tolerance'] = str(ref_img_tolerance)
+            self['DEFAULT']['   num_ref_img_candidates'] = str(num_ref_img_candidates)
             self.set('DEFAULT', '   # Camera channels to be considered in the analysis')
             self['DEFAULT']['   camera_channels'] = str(camera_channels)
             self.set('DEFAULT', '   # Intensities are computed as average from two consecutive images if set to True ')

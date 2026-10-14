@@ -126,6 +126,9 @@ class StackedExtinctionCoefficients:
                 ref_img_indices=cfg.ref_img_indices,
                 average_images=cfg.average_images,
                 lambda_reg=cfg.lambda_reg,
+                auto_ref_imgs=cfg.auto_ref_images,
+                ref_img_tolerance=cfg.ref_img_tolerance,
+                num_ref_img_candidates=cfg.num_ref_img_candidates,
             )
         elif cfg.solver == 'nonlinear':
             return ExtinctionCoefficientsNonLinear(
@@ -137,6 +140,9 @@ class StackedExtinctionCoefficients:
                 weighting_preference=cfg.weighting_preference,
                 weighting_curvature=cfg.weighting_curvature,
                 num_iterations=cfg.num_iterations,
+                auto_ref_imgs=cfg.auto_ref_images,
+                ref_img_tolerance=cfg.ref_img_tolerance,
+                num_ref_img_candidates=cfg.num_ref_img_candidates,
             )
         else:
             raise ValueError(
