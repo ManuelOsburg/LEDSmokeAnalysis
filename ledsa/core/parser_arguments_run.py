@@ -173,6 +173,46 @@ def run_analysis_arguments(args) -> None:
         )
 
 
+def run_ray_validity(args) -> None:
+    """
+    Mark saturated / invalid rays for every channel of config_analysis.ini, see ledsa.analysis.ray_validity.
+
+    :param args: Parsed command line arguments.
+    :type args: argparse.Namespace
+    """
+    if not args.ray_validity:
+        return
+    from ledsa.analysis import ray_validity
+    from ledsa.analysis.reference_images import DEFAULT_REF_IMG_TOLERANCE, get_ref_img_ids
+    from ledsa.data_extraction.step_3_functions import get_sideband_parameters
+
+    config_analysis = ConfigDataAnalysis()
+    channels = config_analysis.get_list_of_values('DEFAULT', 'camera_channels')
+    ref_img_indices = config_analysis.get_list_of_values('DEFAULT', 'ref_img_indices')
+    num_ref_imgs = int(config_analysis['DEFAULT']['num_ref_images'])
+    threshold = float(config_analysis.get('DEFAULT', 'validity_threshold',
+                                          fallback=ray_validity.DEFAULT_VALIDITY_THRESHOLD))
+    min_optical_depth = float(config_analysis.get('DEFAULT', 'validity_min_optical_depth',
+                                                  fallback=ray_validity.DEFAULT_MIN_OPTICAL_DEPTH))
+    sideband_uncertainty = float(config_analysis.get('DEFAULT', 'sideband_uncertainty',
+                                                     fallback=ray_validity.DEFAULT_SIDEBAND_UNCERTAINTY))
+    auto_ref_images = config_analysis.getboolean('DEFAULT', 'auto_ref_images', fallback=False)
+    ref_img_tolerance = float(config_analysis.get('DEFAULT', 'ref_img_tolerance', fallback=DEFAULT_REF_IMG_TOLERANCE))
+    num_candidates = config_analysis.get('DEFAULT', 'num_ref_img_candidates', fallback='None')
+    num_candidates = None if num_candidates == 'None' else int(num_candidates)
+    _, floor, _ = get_sideband_parameters(ConfigData())
+
+    def ref_img_ids(img_data):
+        # same reference images as the extinction coefficient calculation (without average_images)
+        brightness = img_data['sum_col_val'] if auto_ref_images else None
+        return get_ref_img_ids(img_data.index.get_level_values('img_id'), num_ref_imgs, ref_img_indices,
+                               brightness, ref_img_tolerance, num_candidates)
+
+    for channel in channels:
+        ray_validity.write_ray_validity(channel, ref_img_ids, floor, threshold, min_optical_depth,
+                                        sideband_uncertainty)
+
+
 def run_stacked_analysis(args) -> None:
     """
     Run stacked multi-camera extinction coefficient calculation.

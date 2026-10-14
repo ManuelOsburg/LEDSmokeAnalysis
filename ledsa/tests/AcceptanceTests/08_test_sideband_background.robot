@@ -52,6 +52,15 @@ Background Light Biases Sum But Not Sidebg
     Check Background Results    3
     Check Background Results    4
 
+Ray Validity Marking Is Written
+    [Documentation]    The ray validity marking reads the side band columns of step 3 and writes one mark per
+    ...                image and LED.
+    Change Directory    ${WORKDIR}${/}sideband_background
+    Execute Ledsa    --ray_validity
+    File Should Exist    analysis${/}ray_validity_channel0.csv
+    ${content} =    Get File    analysis${/}ray_validity_channel0.csv
+    Should Contain    ${content}    img_id,led_id,led_array_id,b_raw,b_corr,saturated_raw,b_sidebg,delta_b_sidebg,invalid_sidebg
+
 *** Keywords ***
 Run Sideband Analysis
     [Arguments]    ${dir}    ${background}

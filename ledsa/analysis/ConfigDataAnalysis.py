@@ -11,7 +11,8 @@ class ConfigDataAnalysis(cp.ConfigParser):
                  reference_property='sum_col_val',
                  average_images=False, solver='linear', weighting_preference=-6e-3, weighting_curvature=1e-6,
                  num_iterations=200, lambda_reg=1e-3, auto_ref_images=False, ref_img_tolerance=0.02,
-                 num_ref_img_candidates=None):
+                 num_ref_img_candidates=None, validity_threshold=0.1, validity_min_optical_depth=0.1,
+                 sideband_uncertainty=0.2):
         """
         :param load_config_file: Determines whether to load the config file on initialization. Defaults to True.
         :type load_config_file: bool
@@ -58,6 +59,13 @@ class ConfigDataAnalysis(cp.ConfigParser):
         :type num_iterations: int
         :param lambda_reg: Regularization parameter for the linear solver. Defaults to 1e-3.
         :type lambda_reg: float
+        :param validity_threshold: Ray validity marking: relative threshold of the optical depth. Defaults to 0.1.
+        :type validity_threshold: float
+        :param validity_min_optical_depth: Ray validity marking: optical depth below which the relative criteria are
+            not evaluated. Defaults to 0.1.
+        :type validity_min_optical_depth: float
+        :param sideband_uncertainty: Ray validity marking: relative error of the side band pedestal. Defaults to 0.2.
+        :type sideband_uncertainty: float
         """
         cp.ConfigParser.__init__(self, allow_no_value=True)
         if load_config_file:
@@ -89,6 +97,11 @@ class ConfigDataAnalysis(cp.ConfigParser):
             self['DEFAULT']['   num_iterations'] = str(num_iterations)
             self.set('DEFAULT', '   # Options for linear solver (ignored when nonlinear solver is used) ')
             self['DEFAULT']['   lambda_reg'] = str(lambda_reg)
+            self.set('DEFAULT', '   # Options for the ray validity marking (--ray_validity): relative threshold of the optical depth, ')
+            self.set('DEFAULT', '   # optical depth below which the relative criteria are not evaluated, relative error of the side band pedestal ')
+            self['DEFAULT']['   validity_threshold'] = str(validity_threshold)
+            self['DEFAULT']['   validity_min_optical_depth'] = str(validity_min_optical_depth)
+            self['DEFAULT']['   sideband_uncertainty'] = str(sideband_uncertainty)
 
             self['experiment_geometry'] = {}
             self.set('experiment_geometry', '# Global X Y Z position of the camera ')
