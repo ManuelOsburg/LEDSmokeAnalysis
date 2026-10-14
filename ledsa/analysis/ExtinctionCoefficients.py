@@ -9,7 +9,7 @@ from ledsa.analysis.reference_images import DEFAULT_REF_IMG_TOLERANCE, select_re
 from ledsa.core.file_handling import read_hdf, read_hdf_avg, extend_hdf, create_analysis_infos_avg
 from ledsa.data_extraction.data_integrity import check_intensity_normalization
 
-from importlib.metadata import version
+from ledsa.core.version import get_ledsa_version
 
 
 class ExtinctionCoefficients(ABC):
@@ -81,7 +81,7 @@ class ExtinctionCoefficients(ABC):
 
     def __str__(self):
         out = str(self.experiment) + \
-              f'Reference_property: {self.reference_property}, Ref_img_indices: {self.ref_img_indices}, Solver: {self.solver}, Lambda_reg: {self.lambda_reg}, LEDSA {version("ledsa")}\n'
+              f'Reference_property: {self.reference_property}, Ref_img_indices: {self.ref_img_indices}, Solver: {self.solver}, Lambda_reg: {self.lambda_reg}, LEDSA {get_ledsa_version()}\n'
         return out
 
     def calc_and_set_coefficients(self) -> None:
