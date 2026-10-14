@@ -229,11 +229,15 @@ def _generate_led_analysis_data(conf: ConfigData, channel: int, data: np.ndarray
     led_data.bgsub_sum_color_value = float(np.sum(np.clip(data[search_area].astype(np.float64) - background,
                                                           0.0, None)))
 
-    # pedestal N * B with N the number of channel pixels in the box and B the mean over the side band channel pixels
-    if channel_mask is None:
-        num_channel_pixels = data[search_area].size
-    else:
-        num_channel_pixels = int(np.count_nonzero(channel_mask[search_area]))
+    # the pedestals below are subtracted as N * b with N the number of channel pixels in the box
+    box_mask = None if channel_mask is None else channel_mask[search_area]
+    num_channel_pixels = data[search_area].size if box_mask is None else int(np.count_nonzero(box_mask))
+
+    # border ring as for bgsub, but with the estimator of the side bands: mean over the channel pixels including 0
+    ring_background = _estimate_local_background_mean(data[search_area], box_mask)
+    led_data.bgsub2_sum_color_value = float(led_data.sum_color_value) - num_channel_pixels * ring_background
+
+    # b = mean over the channel pixels in the side bands next to the LED strip
     sideband_background = estimate_sideband_background(data, channel_mask, sideband_pixels)
     led_data.sidebg_pedestal = num_channel_pixels * sideband_background
     led_data.sidebg_sum_color_value = subtract_pedestal(float(led_data.sum_color_value), led_data.sidebg_pedestal,
@@ -267,6 +271,38 @@ def _estimate_local_background(search_area_data: np.ndarray, border_width: int =
     if border_pixels.size == 0:
         return 0.0
     return float(np.median(border_pixels))
+
+
+def _estimate_local_background_mean(search_area_data: np.ndarray, channel_mask: Optional[np.ndarray] = None,
+                                    border_width: int = 2) -> float:
+    """
+    Estimate the local background of a search area as the mean over the channel pixels of its border ring.
+
+    Unlike _estimate_local_background, pixels with value 0 are kept if they belong to the color channel: they are
+    noise clipped at 0 after the black level subtraction and are part of the box sum in the same way. Pixels of
+    foreign Bayer channels are excluded via the channel mask. The result is meant to be subtracted as N * b from the
+    box sum (N channel pixels in the box), which is linear in the pixel values, instead of pixel-wise with clipping.
+    Note that the border ring lies in the halo of the LED for small search areas.
+
+    :param search_area_data: Part of the image where the LED is located.
+    :type search_area_data: np.ndarray
+    :param channel_mask: Boolean mask of the channel pixels in the search area, None if all pixels belong to the
+        channel.
+    :type channel_mask: np.ndarray or None
+    :param border_width: Width of the border ring in pixels.
+    :type border_width: int
+    :return: Mean background per channel pixel, NaN if the border ring contains no channel pixel.
+    :rtype: float
+    """
+    if search_area_data.shape[0] <= 2 * border_width or search_area_data.shape[1] <= 2 * border_width:
+        return np.nan
+    border_mask = np.ones(search_area_data.shape, dtype=bool)
+    border_mask[border_width:-border_width, border_width:-border_width] = False
+    if channel_mask is not None:
+        border_mask &= channel_mask
+    if not border_mask.any():
+        return np.nan
+    return float(np.mean(search_area_data[border_mask], dtype=np.float64))
 
 
 def _save_results_in_file(channel: int, img_data: LEDAnalysisData, img_filename: str, img_id: str, img_infos: np.ndarray, basename: str) -> None:
@@ -410,7 +446,7 @@ def _create_header(channel: int, img_id: str, img_filename: str, img_infos: np.n
     out_str += f"channel = {channel}, "
     out_str += f"time[s] = {img_infos[int(img_id) - 1][3]}\n"
     out_str += "# id,line,sum_col_value,average_col_value,max_col_value,bgsub_sum_col_value"
-    out_str += ",sidebg_sum_col_value,sidebg_pedestal"
+    out_str += ",sidebg_sum_col_value,sidebg_pedestal,bgsub2_sum_col_value"
     if fit_leds:
         out_str += ",led_center_x, led_center_y"
         out_str += ",x,y,dx,dy,A,alpha,wx,wy,fit_success,fit_fun,fit_nfev,fit_time"
