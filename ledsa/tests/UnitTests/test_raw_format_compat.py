@@ -10,7 +10,7 @@ class TestRawExtensionRouting:
     def raw_reader_stub(self, monkeypatch):
         calls = []
 
-        def stub(filename, channel):
+        def stub(filename, channel, black_level_per_channel=False):
             calls.append(filename)
             return np.zeros((4, 4))
 
