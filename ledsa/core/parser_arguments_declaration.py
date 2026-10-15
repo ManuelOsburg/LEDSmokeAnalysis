@@ -104,4 +104,9 @@ def add_parser_argument_analysis(parser: argparse.ArgumentParser) -> argparse.Ar
     parser.add_argument('-as', '--analysis_stacked', action='store_true',
                         help='Run stacked multi-camera extinction coefficient calculation '
                              'using config_stacked.ini in the current directory.')
+    parser.add_argument('-rv', '--ray_validity', action='store_true',
+                        help='Mark rays (image, LED) that are saturated by the pedestal in the raw reading or invalid '
+                             'in the side band corrected reading. Writes analysis/ray_validity_channel<c>.csv for '
+                             'the channels and reference images of config_analysis.ini. Does not change the '
+                             'extinction coefficients.')
     return parser

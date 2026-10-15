@@ -40,6 +40,9 @@ def find_search_areas(image: np.ndarray, search_area_radius, pixel_value_percent
             led_id += 1
     print('\n')
     print(f"Found {led_id} LEDS")
+    if led_id >= max_n_leds and cv2.minMaxLoc(image)[1] > threshold:
+        print(f"Warning: the LED search stopped at max_num_leds = {max_n_leds} although there are further pixels "
+              f"above the threshold, LEDs may be missing. Increase max_num_leds or pixel_value_percentile.")
     return np.array(search_areas_list), threshold
 
 

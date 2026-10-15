@@ -28,7 +28,7 @@ from ledsa.analysis.ConfigDataStacked import ConfigDataStacked
 from ledsa.analysis.Experiment import Camera, Experiment, Layers
 from ledsa.analysis.ExtinctionCoefficientsLinear import ExtinctionCoefficientsLinear
 from ledsa.analysis.ExtinctionCoefficientsNonLinear import ExtinctionCoefficientsNonLinear
-from importlib.metadata import version
+from ledsa.core.version import get_ledsa_version
 
 
 class StackedExtinctionCoefficients:
@@ -126,6 +126,9 @@ class StackedExtinctionCoefficients:
                 ref_img_indices=cfg.ref_img_indices,
                 average_images=cfg.average_images,
                 lambda_reg=cfg.lambda_reg,
+                auto_ref_imgs=cfg.auto_ref_images,
+                ref_img_tolerance=cfg.ref_img_tolerance,
+                num_ref_img_candidates=cfg.num_ref_img_candidates,
             )
         elif cfg.solver == 'nonlinear':
             return ExtinctionCoefficientsNonLinear(
@@ -137,6 +140,9 @@ class StackedExtinctionCoefficients:
                 weighting_preference=cfg.weighting_preference,
                 weighting_curvature=cfg.weighting_curvature,
                 num_iterations=cfg.num_iterations,
+                auto_ref_imgs=cfg.auto_ref_images,
+                ref_img_tolerance=cfg.ref_img_tolerance,
+                num_ref_img_candidates=cfg.num_ref_img_candidates,
             )
         else:
             raise ValueError(
@@ -282,7 +288,8 @@ class StackedExtinctionCoefficients:
         )
 
         report_file = self.config.output_path / f'time_alignment_led_array_{self.led_array_id}.txt'
-        if not report_file.exists():
+        # an empty report is left over from an interrupted run and is written again
+        if not report_file.exists() or report_file.stat().st_size == 0:
             self._write_time_alignment_report(report_file, self._time_maps, all_time_arrays, common_times, tol)
 
     def _write_time_alignment_report(
@@ -392,7 +399,11 @@ class StackedExtinctionCoefficients:
                     row += f'  {"—":>8}  {"—":>10}  {"—":>6}'
             lines.append(row)
 
-        path.write_text('\n'.join(lines) + '\n')
+        # the report contains non-ASCII characters (e.g. Δ), so the encoding must not depend on the platform; it is
+        # written to a temporary file first, so an interrupted run does not leave an incomplete report behind
+        tmp_path = path.with_name(path.name + '.tmp')
+        tmp_path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+        tmp_path.replace(path)
         print(f'  Time-alignment report: {path}')
 
     # ------------------------------------------------------------------
@@ -465,7 +476,7 @@ class StackedExtinctionCoefficients:
         header = (
             f'Stacked inversion | {sim_info} | solver: {self.solver} | '
             f'ref_prop: {self.config.reference_property} | '
-            f'LEDSA {version("ledsa")}\n'
+            f'LEDSA {get_ledsa_version()}\n'
         )
         header += 'Layer_bottom_height[m],' + ','.join(map(str, layers.borders[:-1])) + '\n'
         header += 'Layer_top_height[m],'    + ','.join(map(str, layers.borders[1:])) + '\n'

@@ -291,6 +291,15 @@ def _get_column_names(channel: int) -> List[str]:
     """
     file_path = os.path.join('analysis', f'channel{channel}', '1_led_positions.csv')
     parameters = ledsa.core.file_handling.read_table(file_path, delim=',', silent=True)
+    header_columns = _get_main_column_names_from_header(file_path)
+    # files written since the side band pedestal was added name their columns in the header
+    if header_columns is not None and parameters.shape[1] >= len(header_columns):
+        columns = ["img_id"] + header_columns
+        if parameters.shape[1] > len(columns) - 1:
+            columns.extend(["led_center_x", "led_center_y"])
+            columns.extend(["x", "y", "dx", "dy", "A", "alpha", "wx", "wy", "fit_success", "fit_fun", "fit_nfev"])
+        columns.extend(["width", "height"])
+        return columns
     columns = ["img_id", "led_id", "led_array_id",
                "sum_col_val", "mean_col_val", "max_col_val"]
     if parameters.shape[1] in (6, 20):  # files written since the local background subtraction was added
@@ -302,6 +311,39 @@ def _get_column_names(channel: int) -> List[str]:
         columns = _get_old_columns(parameters)
     columns.extend(["width", "height"])
     return columns
+
+
+def _get_main_column_names_from_header(file_path: str) -> Union[List[str], None]:
+    """
+    Read the names of the main (non-fit) columns from the header of a step 3 result file.
+
+    Only files written since the side band pedestal was added are identified by their header, older files return
+    None and are handled by the column count. Header names are mapped to the names used in the binary file, e.g.
+    'sum_col_value' to 'sum_col_val' and 'average_col_value' to 'mean_col_val'.
+
+    :param file_path: Path of the step 3 result file.
+    :type file_path: str
+    :return: Column names starting with 'led_id' and 'led_array_id', or None for older files.
+    :rtype: List[str] or None
+    """
+    with open(file_path) as file:
+        for line in file:
+            if not line.startswith('#'):
+                break
+            names = [name.strip() for name in line.lstrip('#').split(',')]
+            if names[:2] != ['id', 'line'] or 'sidebg_sum_col_value' not in names:
+                continue
+            columns = ['led_id', 'led_array_id']
+            for name in names[2:]:
+                if name.startswith('led_center_x'):
+                    break
+                if name == 'average_col_value':
+                    name = 'mean_col_val'
+                elif name.endswith('_col_value'):
+                    name = name[:-len('ue')]
+                columns.append(name)
+            return columns
+    return None
 
 
 def _get_old_columns(params: np.ndarray) -> List[str]:

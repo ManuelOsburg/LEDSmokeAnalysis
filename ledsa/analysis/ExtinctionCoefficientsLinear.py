@@ -3,6 +3,7 @@ from scipy.optimize import nnls
 
 from ledsa.analysis.Experiment import Experiment, Layers, Camera
 from ledsa.analysis.ExtinctionCoefficients import ExtinctionCoefficients
+from ledsa.analysis.reference_images import DEFAULT_REF_IMG_TOLERANCE
 
 class ExtinctionCoefficientsLinear(ExtinctionCoefficients):
     """
@@ -19,7 +20,8 @@ class ExtinctionCoefficientsLinear(ExtinctionCoefficients):
     :vartype solver: str
     """
 
-    def __init__(self, experiment, reference_property='sum_col_val', num_ref_imgs=10, average_images=False, ref_img_indices=None, lambda_reg=1e-3,):
+    def __init__(self, experiment, reference_property='sum_col_val', num_ref_imgs=10, average_images=False, ref_img_indices=None, lambda_reg=1e-3,
+                 auto_ref_imgs=False, ref_img_tolerance=DEFAULT_REF_IMG_TOLERANCE, num_ref_img_candidates=None):
         """
         Initialize the ExtinctionCoefficientsLinear object.
 
@@ -35,8 +37,15 @@ class ExtinctionCoefficientsLinear(ExtinctionCoefficients):
         :type average_images: bool
         :param lambda_reg: Regularization parameter for Tikhonov regularization.
         :type lambda_reg: float
+        :param auto_ref_imgs: Automatic selection of the reference images, see ExtinctionCoefficients.
+        :type auto_ref_imgs: bool
+        :param ref_img_tolerance: Brightness tolerance of the automatic selection.
+        :type ref_img_tolerance: float
+        :param num_ref_img_candidates: Number of candidate images of the automatic selection.
+        :type num_ref_img_candidates: int or None
         """
-        super().__init__(experiment, reference_property, num_ref_imgs, ref_img_indices, average_images)
+        super().__init__(experiment, reference_property, num_ref_imgs, ref_img_indices, average_images,
+                         auto_ref_imgs, ref_img_tolerance, num_ref_img_candidates)
         self.lambda_reg = lambda_reg
         self.solver = 'linear'
 

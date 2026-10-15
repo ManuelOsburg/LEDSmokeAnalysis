@@ -5,10 +5,11 @@ import numpy as np
 import pandas as pd
 
 from ledsa.analysis.Experiment import Experiment, Layers, Camera
+from ledsa.analysis.reference_images import DEFAULT_REF_IMG_TOLERANCE, select_ref_img_ids_by_brightness
 from ledsa.core.file_handling import read_hdf, read_hdf_avg, extend_hdf, create_analysis_infos_avg
 from ledsa.data_extraction.data_integrity import check_intensity_normalization
 
-from importlib.metadata import version
+from ledsa.core.version import get_ledsa_version
 
 
 class ExtinctionCoefficients(ABC):
@@ -40,7 +41,8 @@ class ExtinctionCoefficients(ABC):
     """
 
     def __init__(self, experiment, reference_property='sum_col_val', num_ref_imgs=10, ref_img_indices=None,
-                 average_images=False):
+                 average_images=False, auto_ref_imgs=False, ref_img_tolerance=DEFAULT_REF_IMG_TOLERANCE,
+                 num_ref_img_candidates=None):
         """
         :param experiment: Object representing the experimental setup.
         :type experiment: Experiment
@@ -52,12 +54,23 @@ class ExtinctionCoefficients(ABC):
         :type ref_img_indices: list[int] or None
         :param average_images: Flag to determine if intensities are computed as an average from two consecutive images.
         :type average_images: bool
+        :param auto_ref_imgs: If True and ref_img_indices is None, the num_ref_imgs reference images are selected
+            automatically by their brightness among the first num_ref_img_candidates images, see
+            ledsa.analysis.reference_images.select_ref_img_ids_by_brightness. Defaults to False.
+        :type auto_ref_imgs: bool
+        :param ref_img_tolerance: Maximum relative deviation of the brightness for the automatic selection.
+        :type ref_img_tolerance: float
+        :param num_ref_img_candidates: Number of images considered for the automatic selection, None: 2 * num_ref_imgs.
+        :type num_ref_img_candidates: int or None
         """
         self.coefficients_per_image_and_layer = []
         self.experiment = experiment
         self.reference_property = reference_property
         self.num_ref_imgs = num_ref_imgs
         self.ref_img_indices = ref_img_indices
+        self.auto_ref_imgs = auto_ref_imgs
+        self.ref_img_tolerance = ref_img_tolerance
+        self.num_ref_img_candidates = num_ref_img_candidates
         self.calculated_img_data = pd.DataFrame()
         self.distances_per_led_and_layer = np.array([])
         self.ref_intensities = np.array([])
@@ -68,7 +81,7 @@ class ExtinctionCoefficients(ABC):
 
     def __str__(self):
         out = str(self.experiment) + \
-              f'Reference_property: {self.reference_property}, Ref_img_indices: {self.ref_img_indices}, Solver: {self.solver}, Lambda_reg: {self.lambda_reg}, LEDSA {version("ledsa")}\n'
+              f'Reference_property: {self.reference_property}, Ref_img_indices: {self.ref_img_indices}, Solver: {self.solver}, Lambda_reg: {self.lambda_reg}, LEDSA {get_ledsa_version()}\n'
         return out
 
     def calc_and_set_coefficients(self) -> None:
@@ -185,6 +198,8 @@ class ExtinctionCoefficients(ABC):
          Calculate and set the reference intensities for all LEDs based on the reference images.
 
          """
+        if self.ref_img_indices is None and self.auto_ref_imgs:
+            self.ref_img_indices = self.select_ref_img_indices()
         if self.ref_img_indices is not None:
             ref_img_data = self.calculated_img_data.query(f'img_id == {self.ref_img_indices}')
         else:
@@ -195,6 +210,21 @@ class ExtinctionCoefficients(ABC):
         ref_intensities = ref_img_data.groupby(level='led_id')[self.reference_property].mean()
         check_intensity_normalization(ref_img_data, ref_intensities, self.reference_property)
         self.ref_intensities = ref_intensities.to_numpy()
+
+    def select_ref_img_indices(self) -> list:
+        """
+        Select the reference images automatically by the brightness of all LEDs of the camera (sum_col_val of all
+        LED arrays), see ledsa.analysis.reference_images.select_ref_img_ids_by_brightness.
+
+        :return: Selected image ids.
+        :rtype: list[int]
+        """
+        if self.average_images:
+            img_data = read_hdf_avg(self.experiment.channel, path=self.experiment.path)
+        else:
+            img_data = read_hdf(self.experiment.channel, path=self.experiment.path)
+        return select_ref_img_ids_by_brightness(img_data['sum_col_val'], self.num_ref_imgs, self.ref_img_tolerance,
+                                                self.num_ref_img_candidates)
 
     def apply_color_correction(self, cc_matrix, on='sum_col_val',
                                nchannels=3) -> None:  # TODO: remove hardcoding of nchannels

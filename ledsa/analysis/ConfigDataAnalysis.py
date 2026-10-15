@@ -10,7 +10,9 @@ class ConfigDataAnalysis(cp.ConfigParser):
                  led_array_indices=None, num_ref_images=10, ref_img_indices=None, camera_channels=0, num_cores=1,
                  reference_property='sum_col_val',
                  average_images=False, solver='linear', weighting_preference=-6e-3, weighting_curvature=1e-6,
-                 num_iterations=200, lambda_reg=1e-3):
+                 num_iterations=200, lambda_reg=1e-3, auto_ref_images=False, ref_img_tolerance=0.02,
+                 num_ref_img_candidates=None, validity_threshold=0.1, validity_min_optical_depth=0.1,
+                 sideband_uncertainty=0.2):
         """
         :param load_config_file: Determines whether to load the config file on initialization. Defaults to True.
         :type load_config_file: bool
@@ -26,13 +28,24 @@ class ConfigDataAnalysis(cp.ConfigParser):
         :type num_ref_images: int
         :param ref_img_indices: Indices of reference images to use. If None, use num_ref_imgs.
         :type ref_img_indices: list[int] or None
+        :param auto_ref_images: If ref_img_indices is None, select the reference images automatically by their
+            brightness among the first num_ref_img_candidates images. Defaults to False.
+        :type auto_ref_images: bool
+        :param ref_img_tolerance: Maximum relative deviation of the brightness for the automatic selection.
+            Defaults to 0.02.
+        :type ref_img_tolerance: float
+        :param num_ref_img_candidates: Number of images considered for the automatic selection. Defaults to None,
+            i.e. 2 * num_ref_images.
+        :type num_ref_img_candidates: int or None
         :param camera_channels: Camera channels to be considered in the analysis. Defaults to 0.
         :type camera_channels: List[int]
         :param num_cores: Number of CPU cores for (multicore) processing. If greater than 1, multicore processing is applied. Defaults to 1.
         :type num_cores: int
         :param reference_property: Property used for reference in LEDSA. Defaults to 'sum_col_val'.
             Use 'bgsub_sum_col_val' to base the analysis on intensities with the local background
-            subtracted, estimated from the border of each LED search area.
+            subtracted, estimated from the border of each LED search area. Use 'sidebg_sum_col_val' to subtract the
+            pedestal estimated in side bands next to the LED strip instead. 'bgsub2_sum_col_val' uses the border
+            ring like bgsub_sum_col_val, but with the mean over the channel pixels subtracted as N * b.
         :type reference_property: str
         :param average_images: Determines if intensities are computed as an average from two consecutive images. Defaults to False.
         :type average_images: bool
@@ -46,6 +59,13 @@ class ConfigDataAnalysis(cp.ConfigParser):
         :type num_iterations: int
         :param lambda_reg: Regularization parameter for the linear solver. Defaults to 1e-3.
         :type lambda_reg: float
+        :param validity_threshold: Ray validity marking: relative threshold of the optical depth. Defaults to 0.1.
+        :type validity_threshold: float
+        :param validity_min_optical_depth: Ray validity marking: optical depth below which the relative criteria are
+            not evaluated. Defaults to 0.1.
+        :type validity_min_optical_depth: float
+        :param sideband_uncertainty: Ray validity marking: relative error of the side band pedestal. Defaults to 0.2.
+        :type sideband_uncertainty: float
         """
         cp.ConfigParser.__init__(self, allow_no_value=True)
         if load_config_file:
@@ -60,6 +80,11 @@ class ConfigDataAnalysis(cp.ConfigParser):
             self['DEFAULT']['   num_ref_images'] = str(num_ref_images)
             self.set('DEFAULT', '   # Indices of reference images to use')
             self['DEFAULT']['   ref_img_indices'] = str(ref_img_indices)
+            self.set('DEFAULT', '   # If ref_img_indices is None: select num_ref_images reference images automatically by their brightness')
+            self.set('DEFAULT', '   # (relative deviation <= ref_img_tolerance) among the first num_ref_img_candidates images (None: 2 * num_ref_images)')
+            self['DEFAULT']['   auto_ref_images'] = str(auto_ref_images)
+            self['DEFAULT']['   ref_img_tolerance'] = str(ref_img_tolerance)
+            self['DEFAULT']['   num_ref_img_candidates'] = str(num_ref_img_candidates)
             self.set('DEFAULT', '   # Camera channels to be considered in the analysis')
             self['DEFAULT']['   camera_channels'] = str(camera_channels)
             self.set('DEFAULT', '   # Intensities are computed as average from two consecutive images if set to True ')
@@ -72,6 +97,11 @@ class ConfigDataAnalysis(cp.ConfigParser):
             self['DEFAULT']['   num_iterations'] = str(num_iterations)
             self.set('DEFAULT', '   # Options for linear solver (ignored when nonlinear solver is used) ')
             self['DEFAULT']['   lambda_reg'] = str(lambda_reg)
+            self.set('DEFAULT', '   # Options for the ray validity marking (--ray_validity): relative threshold of the optical depth, ')
+            self.set('DEFAULT', '   # optical depth below which the relative criteria are not evaluated, relative error of the side band pedestal ')
+            self['DEFAULT']['   validity_threshold'] = str(validity_threshold)
+            self['DEFAULT']['   validity_min_optical_depth'] = str(validity_min_optical_depth)
+            self['DEFAULT']['   sideband_uncertainty'] = str(sideband_uncertainty)
 
             self['experiment_geometry'] = {}
             self.set('experiment_geometry', '# Global X Y Z position of the camera ')

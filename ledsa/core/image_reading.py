@@ -1,4 +1,5 @@
 import os
+from typing import Tuple
 
 import exiv2
 import numpy as np
@@ -6,7 +7,7 @@ import rawpy
 from matplotlib import pyplot as plt
 
 
-def read_channel_data_from_img(filename: str, channel: int) -> np.ndarray:
+def read_channel_data_from_img(filename: str, channel: int, black_level_per_channel: bool = False) -> np.ndarray:
     """
     Returns a 2D array of the image for a single color channel.
     8bit is default range for JPG. For RAW files the Bayer array is returned as a 2D array where
@@ -16,6 +17,8 @@ def read_channel_data_from_img(filename: str, channel: int) -> np.ndarray:
     :type filename: str
     :param channel: The color channel to process.
     :type channel: int
+    :param black_level_per_channel: RAW files only, see _read_img_array_from_raw_file. Defaults to False.
+    :type black_level_per_channel: bool
     :return: A 2D array containing the processed image data for one channel.
     :rtype: np.ndarray
     """
@@ -23,7 +26,7 @@ def read_channel_data_from_img(filename: str, channel: int) -> np.ndarray:
     if extension in ['.JPG', '.JPEG', '.jpg', '.jpeg', '.PNG', '.png']:
         channel_array = _read_channel_data_from_img_file(filename, channel)
     elif extension in ['.CR2', '.CR3', '.NEF', '.ARW', '.DNG']:
-        channel_array = _read_channel_data_from_raw_file(filename, channel)
+        channel_array = _read_channel_data_from_raw_file(filename, channel, black_level_per_channel)
     else:
         raise ValueError(f"Unsupported image format '{extension}' of file {filename}.")
     return channel_array
@@ -65,7 +68,7 @@ def _read_channel_data_from_img_file(filename: str, channel: int) -> np.ndarray:
     return img_array[:, :, channel]
 
 
-def _read_channel_data_from_raw_file(filename: str, channel: int) -> np.ndarray:
+def _read_channel_data_from_raw_file(filename: str, channel: int, black_level_per_channel: bool = False) -> np.ndarray:
     """
     Extracts a single color channel from a RAW image file.
 
@@ -74,10 +77,12 @@ def _read_channel_data_from_raw_file(filename: str, channel: int) -> np.ndarray:
     :param channel: The index of the color channel to extract. The Bayer array typically contains two green channels (1 and 3),
                     one red (0), and one blue (2).
     :type channel: int
+    :param black_level_per_channel: See _read_img_array_from_raw_file. Defaults to False.
+    :type black_level_per_channel: bool
     :return: A 2D numpy array representing the extracted channel, with all other channel values masked or set to zero.
     :rtype: np.ndarray
     """
-    img_array, filter_array = _read_img_array_from_raw_file(filename, channel)
+    img_array, filter_array = _read_img_array_from_raw_file(filename, channel, black_level_per_channel)
     if channel == 0 or channel == 2:
         channel_array = np.where(filter_array == channel, img_array, 0)
     elif channel == 1:
@@ -85,13 +90,88 @@ def _read_channel_data_from_raw_file(filename: str, channel: int) -> np.ndarray:
     return channel_array
 
 
-def _read_img_array_from_raw_file(filename: str, channel: int) -> np.ndarray:
-    # TODO: channel is only relevant for black level, consider individually!
+def read_channel_data_and_mask_from_img(filename: str, channel: int,
+                                        black_level_per_channel: bool = False) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Returns the same 2D channel array as read_channel_data_from_img together with a boolean mask of the
+    pixels that belong to the selected color channel.
+
+    For RAW files the mask is taken from the Bayer filter pattern (raw_colors_visible) and not from the pixel
+    values, because pixels of the selected channel can be 0 as well (noise clipped at 0 after the black level
+    subtraction). For JPG/PNG files every pixel belongs to the channel.
+
+    :param filename: The path of the image file to read.
+    :type filename: str
+    :param channel: The color channel to process.
+    :type channel: int
+    :param black_level_per_channel: RAW files only, see _read_img_array_from_raw_file. Defaults to False.
+    :type black_level_per_channel: bool
+    :return: The channel array and the boolean channel mask of the same shape.
+    :rtype: tuple[np.ndarray, np.ndarray]
+    """
+    extension = os.path.splitext(filename)[-1]
+    if extension in ['.JPG', '.JPEG', '.jpg', '.jpeg', '.PNG', '.png']:
+        channel_array = _read_channel_data_from_img_file(filename, channel)
+        channel_mask = np.ones(channel_array.shape, dtype=bool)
+    elif extension in ['.CR2', '.CR3', '.NEF', '.ARW', '.DNG']:
+        img_array, filter_array = _read_img_array_from_raw_file(filename, channel, black_level_per_channel)
+        channel_mask = get_bayer_channel_mask(filter_array, channel)
+        channel_array = np.where(channel_mask, img_array, 0)
+    else:
+        raise ValueError(f"Unsupported image format '{extension}' of file {filename}.")
+    return channel_array, channel_mask
+
+
+def get_bayer_channel_mask(filter_array: np.ndarray, channel: int) -> np.ndarray:
+    """
+    Returns a boolean mask of the Bayer filter positions that belong to the given color channel.
+    The Bayer array contains two green channels (1 and 3), one red (0) and one blue (2).
+
+    :param filter_array: Bayer filter pattern of the raw image (rawpy raw_colors_visible).
+    :type filter_array: np.ndarray
+    :param channel: The color channel (0 red, 1 green, 2 blue).
+    :type channel: int
+    :return: Boolean mask, True where the pixel belongs to the channel.
+    :rtype: np.ndarray
+    """
+    if channel == 1:
+        return (filter_array == 1) | (filter_array == 3)
+    return filter_array == channel
+
+
+def _read_img_array_from_raw_file(filename: str, channel: int, black_level_per_channel: bool = False) -> np.ndarray:
+    """
+    Reads the visible Bayer array of a RAW file and subtracts the black level.
+
+    Default (black_level_per_channel=False): the black level of the given channel is subtracted from all pixels,
+    the result is rescaled to the white level, truncated to int16 and clipped at 0. Clipping rectifies the noise
+    around the black level, which adds a positive pedestal to dark pixels.
+
+    With black_level_per_channel=True each pixel gets the black level of its own Bayer channel
+    (black_level_per_channel indexed by raw_colors_visible), the same rescaling is applied per channel and the
+    result is returned as float64 without truncation and without clipping, so negative values are kept and the
+    noise averages to zero.
+
+    :param filename: The file path of the RAW image to be read.
+    :type filename: str
+    :param channel: The color channel whose black level is used for all pixels in the default mode.
+    :type channel: int
+    :param black_level_per_channel: Use the black level of each pixel's channel, float without clipping.
+    :type black_level_per_channel: bool
+    :return: The image array and the Bayer filter array (raw_colors_visible).
+    :rtype: tuple[np.ndarray, np.ndarray]
+    """
+    # TODO: channel is only relevant for black level, consider individually! (see black_level_per_channel)
     with rawpy.imread(filename) as raw:
         data = raw.raw_image_visible.copy()
         filter_array = raw.raw_colors_visible
-        black_level = raw.black_level_per_channel[channel]
+        black_levels = raw.black_level_per_channel
         white_level = raw.white_level
+    if black_level_per_channel:
+        black_level = np.asarray(black_levels, dtype=np.float64)[filter_array]
+        img_array = (data - black_level) * (white_level / (white_level - black_level))
+        return img_array, filter_array
+    black_level = black_levels[channel]
     img_array = data.astype(np.int16) - black_level
     img_array = (img_array * (white_level / (white_level - black_level))).astype(np.int16)
     img_array = np.clip(img_array, 0, white_level)

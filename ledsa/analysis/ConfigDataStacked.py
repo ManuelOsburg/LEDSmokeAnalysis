@@ -2,6 +2,7 @@ import configparser as cp
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from ledsa.analysis.reference_images import DEFAULT_REF_IMG_TOLERANCE
 
 class ConfigDataStacked(cp.ConfigParser):
     """
@@ -211,6 +212,22 @@ class ConfigDataStacked(cp.ConfigParser):
         return self.get_list_of_values('DEFAULT', 'ref_img_indices', dtype=int, fallback=None)
 
     @property
+    def auto_ref_images(self) -> bool:
+        """Select the reference images of each simulation automatically by brightness if ref_img_indices is None."""
+        return self.getboolean('DEFAULT', 'auto_ref_images', fallback=False)
+
+    @property
+    def ref_img_tolerance(self) -> float:
+        """Maximum relative deviation of the brightness for the automatic selection."""
+        return float(self.get('DEFAULT', 'ref_img_tolerance', fallback=str(DEFAULT_REF_IMG_TOLERANCE)))
+
+    @property
+    def num_ref_img_candidates(self) -> Optional[int]:
+        """Number of images considered for the automatic selection; ``None`` → 2 * num_ref_images."""
+        value = self.get('DEFAULT', 'num_ref_img_candidates', fallback='None')
+        return None if value == 'None' else int(value)
+
+    @property
     def average_images(self) -> bool:
         """Whether to use averaged image pairs."""
         return self.getboolean('DEFAULT', 'average_images', fallback=False)
@@ -273,6 +290,11 @@ class ConfigDataStacked(cp.ConfigParser):
         cfg['DEFAULT']['num_ref_images'] = '10'
         cfg.set('DEFAULT', "# Explicit reference image indices (overrides num_ref_images); 'None' to disable")
         cfg['DEFAULT']['ref_img_indices'] = 'None'
+        cfg.set('DEFAULT', '# If ref_img_indices is None: select the reference images of each simulation automatically')
+        cfg.set('DEFAULT', '# by brightness among the first num_ref_img_candidates images (None: 2 * num_ref_images)')
+        cfg['DEFAULT']['auto_ref_images'] = 'False'
+        cfg['DEFAULT']['ref_img_tolerance'] = str(DEFAULT_REF_IMG_TOLERANCE)
+        cfg['DEFAULT']['num_ref_img_candidates'] = 'None'
         cfg['DEFAULT']['average_images'] = 'False'
         cfg.set('DEFAULT', '# ── Channels / parallelism ─────────────────────────────────────────')
         cfg.set('DEFAULT', '# Space-separated list: 0 = R, 1 = G, 2 = B')
