@@ -68,8 +68,8 @@ def build_sideband_pixels(search_areas: np.ndarray, directions: np.ndarray, img_
     Determine the pixels of the two side bands of each LED.
 
     With t the coordinate along the strip and s the coordinate across the strip, both relative to the center of the
-    search area, a pixel belongs to the side bands if -R <= t < R and lo <= |s| < hi (with the same half-open
-    convention as the search area, i.e. lo <= s < hi or -hi <= s < -lo). For a vertical strip this is
+    search area, a pixel belongs to the side bands if ``-R <= t < R`` and ``lo <= abs(s) < hi`` (with the same
+    half-open convention as the search area, i.e. ``lo <= s < hi`` or ``-hi <= s < -lo``). For a vertical strip this is
     rows r-R..r+R-1 and columns c+lo..c+hi-1 and c-hi..c-lo-1. Pixels outside the image and pixels within
     R + exclusion_margin (Chebyshev distance) of the center of any other search area are excluded.
 

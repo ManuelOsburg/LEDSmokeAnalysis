@@ -34,8 +34,8 @@ Data Extraction
      - Step 3: Analyse all images to extract pixel values inside the search areas and fit them to an LED model (SLOW!).
      - ``--r`` (Use the red channel, default), ``--g`` (Use the green channel), ``--b`` (Use the blue channel), ``-rgb`` (Run for each channel)
    * - ``-s3_fast``, ``--step_3_fast`, ``--analyse_photo_fast``
-     - Step 3: Analyse all images to extract pixel values and calculate the accumulated values inside the search areas (FAST!).
-     - --
+     - Step 3: Analyse all images to extract pixel values and calculate the accumulated values inside the search areas (FAST!). Besides the plain sum, the background-corrected sums ``bgsub_sum_col_val``, ``bgsub2_sum_col_val`` and ``sidebg_sum_col_val`` are written (see ``reference_property`` in the analysis configuration).
+     - ``--r``, ``--g``, ``--b``, ``-rgb`` as for ``-s3``
    * - ``-re``, ``--restart``
      - Restart step 3 if it was previously interrupted. Only the images that have not been analysed are taken into account.
      - --
@@ -63,6 +63,9 @@ Analysis
    * - ``--cc_channels``
      - Specifies the channels to which color correction gets applied.
      - Can extend the list of channels, Multiple values allowed.
+   * - ``-rv``, ``--ray_validity``
+     - Marks the rays (image, LED) that are saturated by the pedestal in the raw reading or invalid in the side band corrected reading and writes ``analysis/ray_validity_channel<c>.csv``. Uses the channels and reference images of ``config_analysis.ini``; the extinction coefficients are not changed.
+     - Thresholds ``validity_threshold``, ``validity_min_optical_depth``, ``sideband_uncertainty`` in ``config_analysis.ini``
 
 .. warning::
     Color Correction is in a test state and has not yet been sufficiently evaluated. The application may lead to incorrect results.

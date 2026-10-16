@@ -90,6 +90,42 @@ For a complete list of options, run:
 python -m ledsa --help
 ```
 
+### Background Correction and Reference Images (optional)
+
+By default the extinction coefficients are computed from `sum_col_val`, the plain sum of the pixel values in the
+search area of each LED. Step 3 additionally writes background-corrected sums, which can be selected with
+`reference_property` in `config_analysis.ini`:
+
+| `reference_property` | Background estimate |
+|---|---|
+| `sum_col_val` (default) | none |
+| `bgsub_sum_col_val` | median of the pixels > 0 in a 2 px border ring of the search area, subtracted pixel-wise |
+| `bgsub2_sum_col_val` | mean over the channel pixels (including 0) of the same border ring, subtracted as N·b |
+| `sidebg_sum_col_val` | mean over the channel pixels in side bands 25–60 px next to the LED strip (`sideband_distances` in `config.ini`), subtracted as N·B |
+
+For small search areas the border ring lies in the halo of the LED itself; the side bands sample the additive
+pedestal (stray light, smoke glow, clipped noise) next to the LED. Under dense smoke the box sum consists mostly of
+this pedestal. The following command marks such rays per image and LED, without changing the extinction
+coefficients:
+
+```bash
+python -m ledsa -rv
+```
+
+It writes `analysis/ray_validity_channel<c>.csv` (thresholds `validity_threshold`, `validity_min_optical_depth`,
+`sideband_uncertainty` in `config_analysis.ini`).
+
+The reference intensities I0 are the mean over the first `num_ref_images` images, or over the images given in
+`ref_img_indices`. With `auto_ref_images = True` the reference images are selected automatically:
+
+- Images whose brightness deviates by more than `ref_img_tolerance` are excluded.
+- Partly occluded images are excluded (`ref_img_led_deviation`, `ref_img_led_fraction`).
+- Images later than `ref_img_max_time` are excluded. Set it to 0 if `Experiment_Time` counts from the ignition.
+- The analysis stops with an error if fewer than `num_ref_img_min` valid images remain.
+- In `config_stacked.ini`, `ref_img_common = True` selects one list of images that is valid for all cameras.
+
+All options default to the previous behaviour.
+
 ## Demo
 
 LEDSA includes a demo that demonstrates its functionality using sample data.

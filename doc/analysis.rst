@@ -26,6 +26,22 @@ Analysis
    :undoc-members:
    :show-inheritance:
 
+Reference Images
+----------------
+
+.. automodule:: ledsa.analysis.reference_images
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Ray Validity
+------------
+
+.. automodule:: ledsa.analysis.ray_validity
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Stacked Multi-Camera Analysis
 ------------------------------
 
