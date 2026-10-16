@@ -12,7 +12,8 @@ class ConfigDataAnalysis(cp.ConfigParser):
                  average_images=False, solver='linear', weighting_preference=-6e-3, weighting_curvature=1e-6,
                  num_iterations=200, lambda_reg=1e-3, auto_ref_images=False, ref_img_tolerance=0.02,
                  num_ref_img_candidates=None, validity_threshold=0.1, validity_min_optical_depth=0.1,
-                 sideband_uncertainty=0.2):
+                 sideband_uncertainty=0.2, ref_img_led_deviation=0.2, ref_img_led_fraction=0.02,
+                 ref_img_max_time=None, num_ref_img_min=None):
         """
         :param load_config_file: Determines whether to load the config file on initialization. Defaults to True.
         :type load_config_file: bool
@@ -37,6 +38,18 @@ class ConfigDataAnalysis(cp.ConfigParser):
         :param num_ref_img_candidates: Number of images considered for the automatic selection. Defaults to None,
             i.e. 2 * num_ref_images.
         :type num_ref_img_candidates: int or None
+        :param ref_img_led_deviation: Automatic selection: relative deviation from which an LED counts as deviating.
+            Defaults to 0.2.
+        :type ref_img_led_deviation: float
+        :param ref_img_led_fraction: Automatic selection: maximum fraction of deviating LEDs (partial occlusion).
+            Defaults to 0.02.
+        :type ref_img_led_fraction: float
+        :param ref_img_max_time: Automatic selection: latest experiment time [s] of a reference image. Defaults to
+            None, i.e. no limit; 0 (before the ignition) is recommended if Experiment_Time counts from the ignition.
+        :type ref_img_max_time: float or None
+        :param num_ref_img_min: Automatic selection: minimum number of valid reference images. Defaults to None, i.e.
+            min(5, num_ref_images).
+        :type num_ref_img_min: int or None
         :param camera_channels: Camera channels to be considered in the analysis. Defaults to 0.
         :type camera_channels: List[int]
         :param num_cores: Number of CPU cores for (multicore) processing. If greater than 1, multicore processing is applied. Defaults to 1.
@@ -85,6 +98,14 @@ class ConfigDataAnalysis(cp.ConfigParser):
             self['DEFAULT']['   auto_ref_images'] = str(auto_ref_images)
             self['DEFAULT']['   ref_img_tolerance'] = str(ref_img_tolerance)
             self['DEFAULT']['   num_ref_img_candidates'] = str(num_ref_img_candidates)
+            self.set('DEFAULT', '   # Automatic selection: an image is excluded if more than ref_img_led_fraction of the LEDs deviate by more')
+            self.set('DEFAULT', '   # than ref_img_led_deviation (partial occlusion) or if its Experiment_Time is later than ref_img_max_time')
+            self.set('DEFAULT', '   # (None: no limit; 0 = before the ignition is recommended if Experiment_Time counts from the ignition).')
+            self.set('DEFAULT', '   # Fewer than num_ref_img_min valid images raise an error (None: min(5, num_ref_images)).')
+            self['DEFAULT']['   ref_img_led_deviation'] = str(ref_img_led_deviation)
+            self['DEFAULT']['   ref_img_led_fraction'] = str(ref_img_led_fraction)
+            self['DEFAULT']['   ref_img_max_time'] = str(ref_img_max_time)
+            self['DEFAULT']['   num_ref_img_min'] = str(num_ref_img_min)
             self.set('DEFAULT', '   # Camera channels to be considered in the analysis')
             self['DEFAULT']['   camera_channels'] = str(camera_channels)
             self.set('DEFAULT', '   # Intensities are computed as average from two consecutive images if set to True ')

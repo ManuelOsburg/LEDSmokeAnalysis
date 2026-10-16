@@ -183,7 +183,7 @@ def run_ray_validity(args) -> None:
     if not args.ray_validity:
         return
     from ledsa.analysis import ray_validity
-    from ledsa.analysis.reference_images import DEFAULT_REF_IMG_TOLERANCE, get_ref_img_ids
+    from ledsa.analysis.reference_images import get_ref_img_ids, load_experiment_times, read_ref_img_options
     from ledsa.data_extraction.step_3_functions import get_sideband_parameters
 
     config_analysis = ConfigDataAnalysis()
@@ -196,17 +196,19 @@ def run_ray_validity(args) -> None:
                                                   fallback=ray_validity.DEFAULT_MIN_OPTICAL_DEPTH))
     sideband_uncertainty = float(config_analysis.get('DEFAULT', 'sideband_uncertainty',
                                                      fallback=ray_validity.DEFAULT_SIDEBAND_UNCERTAINTY))
-    auto_ref_images = config_analysis.getboolean('DEFAULT', 'auto_ref_images', fallback=False)
-    ref_img_tolerance = float(config_analysis.get('DEFAULT', 'ref_img_tolerance', fallback=DEFAULT_REF_IMG_TOLERANCE))
-    num_candidates = config_analysis.get('DEFAULT', 'num_ref_img_candidates', fallback='None')
-    num_candidates = None if num_candidates == 'None' else int(num_candidates)
+    options = read_ref_img_options(config_analysis)
     _, floor, _ = get_sideband_parameters(ConfigData())
 
     def ref_img_ids(img_data):
         # same reference images as the extinction coefficient calculation (without average_images)
-        brightness = img_data['sum_col_val'] if auto_ref_images else None
+        if not options['auto_ref_imgs']:
+            return get_ref_img_ids(img_data.index.get_level_values('img_id'), num_ref_imgs, ref_img_indices)
+        experiment_times = load_experiment_times() if options['ref_img_max_time'] is not None else None
         return get_ref_img_ids(img_data.index.get_level_values('img_id'), num_ref_imgs, ref_img_indices,
-                               brightness, ref_img_tolerance, num_candidates)
+                               img_data['sum_col_val'], options['ref_img_tolerance'],
+                               options['num_ref_img_candidates'], led_deviation=options['ref_img_led_deviation'],
+                               led_fraction=options['ref_img_led_fraction'], experiment_times=experiment_times,
+                               max_time=options['ref_img_max_time'], num_ref_img_min=options['num_ref_img_min'])
 
     for channel in channels:
         ray_validity.write_ray_validity(channel, ref_img_ids, floor, threshold, min_optical_depth,
@@ -308,17 +310,13 @@ def extionction_coefficient_calculation(args) -> None:
                                                               weighting_curvature=ex_data.weighting_curvature,
                                                               weighting_preference=ex_data.weighting_preference,
                                                               num_iterations=ex_data.num_iterations,
-                                                              auto_ref_imgs=ex_data.auto_ref_images,
-                                                              ref_img_tolerance=ex_data.ref_img_tolerance,
-                                                              num_ref_img_candidates=ex_data.num_ref_img_candidates)
+                                                              **ex_data.ref_img_options)
                 elif solver == 'linear':
                     eca = ECA.ExtinctionCoefficientsLinear(ex, reference_property=ex_data.reference_property,
                                                            num_ref_imgs=ex_data.num_ref_images,
                                                            ref_img_indices=ex_data.ref_img_indices,
                                                            lambda_reg=ex_data.lambda_reg,
-                                                           auto_ref_imgs=ex_data.auto_ref_images,
-                                                           ref_img_tolerance=ex_data.ref_img_tolerance,
-                                                           num_ref_img_candidates=ex_data.num_ref_img_candidates)
+                                                           **ex_data.ref_img_options)
                 else:
                     raise ValueError(f"Invalid solver type '{solver}'. Must be 'linear' or 'nonlinear'.")
                 if ex_data.n_cpus > 1:

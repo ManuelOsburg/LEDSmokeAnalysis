@@ -5,7 +5,9 @@ import numpy as np
 import pandas as pd
 
 from ledsa.analysis.Experiment import Experiment, Layers, Camera
-from ledsa.analysis.reference_images import DEFAULT_REF_IMG_TOLERANCE, select_ref_img_ids_by_brightness
+from ledsa.analysis.reference_images import (DEFAULT_REF_IMG_LED_DEVIATION, DEFAULT_REF_IMG_LED_FRACTION,
+                                             DEFAULT_REF_IMG_TOLERANCE, load_experiment_times,
+                                             select_ref_img_ids_by_brightness)
 from ledsa.core.file_handling import read_hdf, read_hdf_avg, extend_hdf, create_analysis_infos_avg
 from ledsa.data_extraction.data_integrity import check_intensity_normalization
 
@@ -42,7 +44,8 @@ class ExtinctionCoefficients(ABC):
 
     def __init__(self, experiment, reference_property='sum_col_val', num_ref_imgs=10, ref_img_indices=None,
                  average_images=False, auto_ref_imgs=False, ref_img_tolerance=DEFAULT_REF_IMG_TOLERANCE,
-                 num_ref_img_candidates=None):
+                 num_ref_img_candidates=None, ref_img_led_deviation=DEFAULT_REF_IMG_LED_DEVIATION,
+                 ref_img_led_fraction=DEFAULT_REF_IMG_LED_FRACTION, ref_img_max_time=None, num_ref_img_min=None):
         """
         :param experiment: Object representing the experimental setup.
         :type experiment: Experiment
@@ -62,6 +65,15 @@ class ExtinctionCoefficients(ABC):
         :type ref_img_tolerance: float
         :param num_ref_img_candidates: Number of images considered for the automatic selection, None: 2 * num_ref_imgs.
         :type num_ref_img_candidates: int or None
+        :param ref_img_led_deviation: Automatic selection: relative deviation from which an LED counts as deviating.
+        :type ref_img_led_deviation: float
+        :param ref_img_led_fraction: Automatic selection: maximum fraction of deviating LEDs (partial occlusion).
+        :type ref_img_led_fraction: float
+        :param ref_img_max_time: Automatic selection: latest experiment time [s] of a reference image, None: no limit.
+        :type ref_img_max_time: float or None
+        :param num_ref_img_min: Automatic selection: minimum number of valid reference images, None: min(5,
+            num_ref_imgs). Fewer raise a ValueError.
+        :type num_ref_img_min: int or None
         """
         self.coefficients_per_image_and_layer = []
         self.experiment = experiment
@@ -71,6 +83,10 @@ class ExtinctionCoefficients(ABC):
         self.auto_ref_imgs = auto_ref_imgs
         self.ref_img_tolerance = ref_img_tolerance
         self.num_ref_img_candidates = num_ref_img_candidates
+        self.ref_img_led_deviation = ref_img_led_deviation
+        self.ref_img_led_fraction = ref_img_led_fraction
+        self.ref_img_max_time = ref_img_max_time
+        self.num_ref_img_min = num_ref_img_min
         self.calculated_img_data = pd.DataFrame()
         self.distances_per_led_and_layer = np.array([])
         self.ref_intensities = np.array([])
@@ -223,8 +239,13 @@ class ExtinctionCoefficients(ABC):
             img_data = read_hdf_avg(self.experiment.channel, path=self.experiment.path)
         else:
             img_data = read_hdf(self.experiment.channel, path=self.experiment.path)
+        experiment_times = None
+        if self.ref_img_max_time is not None:
+            experiment_times = load_experiment_times(self.experiment.path, self.average_images)
         return select_ref_img_ids_by_brightness(img_data['sum_col_val'], self.num_ref_imgs, self.ref_img_tolerance,
-                                                self.num_ref_img_candidates)
+                                                self.num_ref_img_candidates, self.ref_img_led_deviation,
+                                                self.ref_img_led_fraction, experiment_times, self.ref_img_max_time,
+                                                self.num_ref_img_min)
 
     def apply_color_correction(self, cc_matrix, on='sum_col_val',
                                nchannels=3) -> None:  # TODO: remove hardcoding of nchannels

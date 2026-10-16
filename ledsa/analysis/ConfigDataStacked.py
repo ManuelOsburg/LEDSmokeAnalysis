@@ -2,7 +2,8 @@ import configparser as cp
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from ledsa.analysis.reference_images import DEFAULT_REF_IMG_TOLERANCE
+from ledsa.analysis.reference_images import (DEFAULT_REF_IMG_LED_DEVIATION, DEFAULT_REF_IMG_LED_FRACTION,
+                                             DEFAULT_REF_IMG_TOLERANCE, read_ref_img_options)
 
 class ConfigDataStacked(cp.ConfigParser):
     """
@@ -228,6 +229,18 @@ class ConfigDataStacked(cp.ConfigParser):
         return None if value == 'None' else int(value)
 
     @property
+    def ref_img_common(self) -> bool:
+        """With the automatic selection: one list of reference images that is valid for all simulations (the
+        img_ids of each simulation) instead of a separate selection per simulation."""
+        return self.getboolean('DEFAULT', 'ref_img_common', fallback=False)
+
+    @property
+    def ref_img_options(self) -> dict:
+        """All options of the automatic reference image selection as keyword arguments for the sub solvers, see
+        ledsa.analysis.reference_images.read_ref_img_options."""
+        return read_ref_img_options(self)
+
+    @property
     def average_images(self) -> bool:
         """Whether to use averaged image pairs."""
         return self.getboolean('DEFAULT', 'average_images', fallback=False)
@@ -295,6 +308,17 @@ class ConfigDataStacked(cp.ConfigParser):
         cfg['DEFAULT']['auto_ref_images'] = 'False'
         cfg['DEFAULT']['ref_img_tolerance'] = str(DEFAULT_REF_IMG_TOLERANCE)
         cfg['DEFAULT']['num_ref_img_candidates'] = 'None'
+        cfg.set('DEFAULT', '# Exclude images with more than ref_img_led_fraction of the LEDs deviating by more than')
+        cfg.set('DEFAULT', '# ref_img_led_deviation (partial occlusion) or later than ref_img_max_time [s] (None: no limit,')
+        cfg.set('DEFAULT', '# 0 = before the ignition recommended); fewer than num_ref_img_min (None: min(5, num_ref_images))')
+        cfg.set('DEFAULT', '# valid images raise an error')
+        cfg['DEFAULT']['ref_img_led_deviation'] = str(DEFAULT_REF_IMG_LED_DEVIATION)
+        cfg['DEFAULT']['ref_img_led_fraction'] = str(DEFAULT_REF_IMG_LED_FRACTION)
+        cfg['DEFAULT']['ref_img_max_time'] = 'None'
+        cfg['DEFAULT']['num_ref_img_min'] = 'None'
+        cfg.set('DEFAULT', '# True: one list of reference images valid for all simulations (same img_ids in each')
+        cfg.set('DEFAULT', '# simulation, not necessarily the same times); False: separate selection per simulation')
+        cfg['DEFAULT']['ref_img_common'] = 'False'
         cfg['DEFAULT']['average_images'] = 'False'
         cfg.set('DEFAULT', '# ── Channels / parallelism ─────────────────────────────────────────')
         cfg.set('DEFAULT', '# Space-separated list: 0 = R, 1 = G, 2 = B')

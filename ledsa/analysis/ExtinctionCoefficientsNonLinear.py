@@ -30,7 +30,7 @@ class ExtinctionCoefficientsNonLinear(ExtinctionCoefficients):
     """
     def __init__(self, experiment, reference_property='sum_col_val', num_ref_imgs=10, ref_img_indices=None, average_images=False, weighting_curvature=1e-6,
                  weighting_preference=-6e-3, num_iterations=200, auto_ref_imgs=False,
-                 ref_img_tolerance=DEFAULT_REF_IMG_TOLERANCE, num_ref_img_candidates=None):
+                 ref_img_tolerance=DEFAULT_REF_IMG_TOLERANCE, num_ref_img_candidates=None, **ref_img_options):
         """
         :param experiment: Object representing the experimental setup.
         :type experiment: Experiment
@@ -54,10 +54,12 @@ class ExtinctionCoefficientsNonLinear(ExtinctionCoefficients):
         :type ref_img_tolerance: float
         :param num_ref_img_candidates: Number of candidate images of the automatic selection.
         :type num_ref_img_candidates: int or None
+        :param ref_img_options: Further options of the automatic selection (ref_img_led_deviation,
+            ref_img_led_fraction, ref_img_max_time, num_ref_img_min), see ExtinctionCoefficients.
         """
 
         super().__init__(experiment, reference_property, num_ref_imgs, ref_img_indices, average_images,
-                         auto_ref_imgs, ref_img_tolerance, num_ref_img_candidates)
+                         auto_ref_imgs, ref_img_tolerance, num_ref_img_candidates, **ref_img_options)
         self.bounds = [(0, 10) for _ in range(self.experiment.layers.amount)]
         self.weighting_preference = weighting_preference
         self.weighting_curvature = weighting_curvature
