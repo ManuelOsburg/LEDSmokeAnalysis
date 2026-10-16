@@ -9,7 +9,8 @@ from ledsa.analysis.ExtinctionCoefficients import ExtinctionCoefficients
 from ledsa.analysis.ExtinctionCoefficientsLinear import ExtinctionCoefficientsLinear
 from ledsa.analysis.ExtinctionCoefficientsNonLinear import ExtinctionCoefficientsNonLinear
 from ledsa.analysis.reference_images import (evaluate_ref_img_candidates, get_ref_img_ids, load_experiment_times,
-                                             read_ref_img_options, select_ref_img_ids_by_brightness)
+                                             read_ref_img_options, select_common_ref_img_ids,
+                                             select_ref_img_ids_by_brightness)
 
 NUM_LEDS = 50
 
@@ -131,6 +132,60 @@ class TestSelectByBrightness:
         assert list(evaluation.index) == list(range(1, 21))
         assert not evaluation.loc[1, 'valid'] and evaluation.loc[1, 'reason'].startswith('brightness 0.42')
         assert evaluation.loc[2:, 'valid'].all()
+
+
+class TestCommonSelection:
+    def make_cameras(self):
+        factors_a = np.ones(20)
+        factors_a[0] = 0.42          # camera A: image 1 too dark
+        factors_b = np.ones(20)
+        factors_b[3] = 0.95          # camera B: image 4 too dark
+        return [make_brightness(factors_a, seed=1), make_brightness(factors_b, seed=2)]
+
+    def test_intersection_of_valid_images(self, capsys):
+        selected = select_common_ref_img_ids(self.make_cameras(), 10)
+        assert selected == [2, 3, 5, 6, 7, 8, 9, 10, 11, 12]
+        out = capsys.readouterr().out
+        assert 'camera 0' in out and 'camera 1' in out and 'image 4 excluded: brightness' in out
+
+    def test_too_few_common_images_raise(self):
+        with pytest.raises(ValueError, match='valid for all cameras'):
+            select_common_ref_img_ids(self.make_cameras(), 5, num_candidates=5)
+
+    def test_stacked_analysis_uses_the_common_list(self, monkeypatch):
+        import ledsa.analysis.StackedExtinctionCoefficients as stacked_module
+        from ledsa.analysis.StackedExtinctionCoefficients import StackedExtinctionCoefficients
+        cameras = self.make_cameras()
+        data = {f'sim{i}': brightness.to_frame() for i, brightness in enumerate(cameras)}
+        monkeypatch.setattr(stacked_module, 'read_hdf', lambda channel, path='.': data[path])
+        stacked = StackedExtinctionCoefficients.__new__(StackedExtinctionCoefficients)
+        subs = [SimpleNamespace(experiment=SimpleNamespace(channel=0, path=f'sim{i}'), average_images=False,
+                                ref_img_indices=None) for i in range(2)]
+        stacked._sub_solvers = subs
+        options = dict(auto_ref_imgs=True, ref_img_tolerance=0.02, num_ref_img_candidates=None,
+                       ref_img_led_deviation=0.2, ref_img_led_fraction=0.02, ref_img_max_time=None,
+                       num_ref_img_min=None)
+        stacked.config = SimpleNamespace(auto_ref_images=True, ref_img_common=True, ref_img_indices=None,
+                                         num_ref_images=10, ref_img_options=options)
+        stacked._set_common_ref_img_indices()
+        assert [sub.ref_img_indices for sub in subs] == [[2, 3, 5, 6, 7, 8, 9, 10, 11, 12]] * 2
+        # default: each simulation selects itself
+        for sub in subs:
+            sub.ref_img_indices = None
+        stacked.config.ref_img_common = False
+        stacked._set_common_ref_img_indices()
+        assert [sub.ref_img_indices for sub in subs] == [None, None]
+
+    def test_template_and_fallback(self, tmp_path):
+        from ledsa.analysis.ConfigDataStacked import ConfigDataStacked
+        path = tmp_path / 'config_stacked.ini'
+        ConfigDataStacked.create_template(filename=str(path))
+        assert ConfigDataStacked(filename=str(path)).ref_img_common is False
+        old = tmp_path / 'old.ini'
+        old.write_text('[DEFAULT]\nauto_ref_images = True\n')
+        config = ConfigDataStacked(filename=str(old))
+        assert config.ref_img_common is False
+        assert config.ref_img_options['ref_img_led_fraction'] == 0.02
 
 
 class TestReadOptions:

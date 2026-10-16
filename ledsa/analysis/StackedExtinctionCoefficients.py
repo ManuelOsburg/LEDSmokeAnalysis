@@ -28,6 +28,8 @@ from ledsa.analysis.ConfigDataStacked import ConfigDataStacked
 from ledsa.analysis.Experiment import Camera, Experiment, Layers
 from ledsa.analysis.ExtinctionCoefficientsLinear import ExtinctionCoefficientsLinear
 from ledsa.analysis.ExtinctionCoefficientsNonLinear import ExtinctionCoefficientsNonLinear
+from ledsa.analysis.reference_images import load_experiment_times, select_common_ref_img_ids
+from ledsa.core.file_handling import read_hdf, read_hdf_avg
 from ledsa.core.version import get_ledsa_version
 
 
@@ -198,11 +200,36 @@ class StackedExtinctionCoefficients:
     def _ensure_stacked_variables(self) -> None:
         """Load/compute distance matrix, time alignment, and reference intensities."""
         if self.distances_per_led_and_layer.size == 0:
+            self._set_common_ref_img_indices()
             self._build_stacked_distance_matrix()
         if self._time_maps is None:
             self._compute_time_alignment()
         if self.ref_intensities.size == 0:
             self._build_stacked_ref_intensities()
+
+    def _set_common_ref_img_indices(self) -> None:
+        """
+        With auto_ref_images and ref_img_common (and no explicit ref_img_indices): select one list of reference
+        images that is valid for all simulations and give it to every sub-solver. Otherwise each sub-solver selects
+        its reference images itself.
+        """
+        cfg = self.config
+        if not (cfg.auto_ref_images and cfg.ref_img_common and cfg.ref_img_indices is None):
+            return
+        options = cfg.ref_img_options
+        brightness, times = [], []
+        for sub in self._sub_solvers:
+            exp = sub.experiment
+            img_data = (read_hdf_avg if sub.average_images else read_hdf)(exp.channel, path=exp.path)
+            brightness.append(img_data['sum_col_val'])
+            times.append(load_experiment_times(exp.path, sub.average_images)
+                         if options['ref_img_max_time'] is not None else None)
+        common = select_common_ref_img_ids(brightness, cfg.num_ref_images, options['ref_img_tolerance'],
+                                           options['num_ref_img_candidates'], options['ref_img_led_deviation'],
+                                           options['ref_img_led_fraction'], times, options['ref_img_max_time'],
+                                           options['num_ref_img_min'])
+        for sub in self._sub_solvers:
+            sub.ref_img_indices = list(common)
 
     def _build_stacked_distance_matrix(self) -> None:
         """

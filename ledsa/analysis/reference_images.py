@@ -187,6 +187,61 @@ def select_ref_img_ids_by_brightness(brightness: pd.Series, num_ref_imgs: int,
     return selected
 
 
+def select_common_ref_img_ids(brightness_per_camera: List[pd.Series], num_ref_imgs: int,
+                              tolerance: float = DEFAULT_REF_IMG_TOLERANCE,
+                              num_candidates: Optional[int] = None,
+                              led_deviation: float = DEFAULT_REF_IMG_LED_DEVIATION,
+                              led_fraction: float = DEFAULT_REF_IMG_LED_FRACTION,
+                              experiment_times_per_camera: Optional[List[Optional[pd.Series]]] = None,
+                              max_time: Optional[float] = None,
+                              num_ref_img_min: Optional[int] = None) -> List[int]:
+    """
+    Select one list of reference image ids that is valid for all cameras of a stacked analysis.
+
+    Each camera is evaluated with evaluate_ref_img_candidates on its own images; the first num_ref_imgs img_ids that
+    are valid for all cameras are selected. Note that the img_ids are counted per camera, i.e. the same img_id does not
+    necessarily belong to the same time in all cameras.
+
+    :param brightness_per_camera: Box sums (sum_col_val) with index (img_id, led_id), one series per camera.
+    :type brightness_per_camera: list[pd.Series]
+    :param num_ref_imgs: Number of reference images to select.
+    :type num_ref_imgs: int
+    :param experiment_times_per_camera: Experiment times per camera, required if max_time is given.
+    :type experiment_times_per_camera: list[pd.Series] or None
+    :param tolerance, num_candidates, led_deviation, led_fraction, max_time, num_ref_img_min: See
+        select_ref_img_ids_by_brightness.
+    :return: Selected image ids, ascending.
+    :rtype: list[int]
+    :raises ValueError: If fewer than num_ref_img_min img_ids are valid for all cameras.
+    """
+    if num_candidates is None:
+        num_candidates = 2 * num_ref_imgs
+    if num_ref_img_min is None:
+        num_ref_img_min = min(DEFAULT_NUM_REF_IMG_MIN, num_ref_imgs)
+    if experiment_times_per_camera is None:
+        experiment_times_per_camera = [None] * len(brightness_per_camera)
+    common = None
+    for camera, (brightness, times) in enumerate(zip(brightness_per_camera, experiment_times_per_camera)):
+        evaluation = evaluate_ref_img_candidates(brightness, num_candidates, tolerance, led_deviation, led_fraction,
+                                                 times, max_time)
+        valid = set(int(img_id) for img_id in evaluation.index[evaluation['valid']])
+        common = valid if common is None else common & valid
+        print(f'Reference image candidates of camera {camera}: {int(evaluation.index[0])}-'
+              f'{int(evaluation.index[-1])}, valid {sorted(valid)}')
+        for img_id, row in evaluation[~evaluation['valid']].iterrows():
+            print(f'  image {int(img_id)} excluded: {row.reason}')
+    selected = sorted(common)[:num_ref_imgs]
+    print(f'Reference images valid for all cameras: {selected}')
+    if len(selected) < num_ref_img_min:
+        raise ValueError(f'Only {len(selected)} reference images {selected} are valid for all cameras, at least '
+                         f'{num_ref_img_min} are required. Check the excluded images above; adjust ref_img_max_time, '
+                         f'num_ref_img_candidates, set ref_img_common = False or set ref_img_indices explicitly.')
+    if len(selected) < num_ref_imgs:
+        print(f'Warning: only {len(selected)} instead of {num_ref_imgs} reference images valid for all cameras: '
+              f'{selected}')
+    return selected
+
+
 def load_experiment_times(path='.', average_images: bool = False) -> pd.Series:
     """
     Experiment times per img_id from analysis/image_infos_analysis.csv (or _avg.csv), with img_id = row number + 1
