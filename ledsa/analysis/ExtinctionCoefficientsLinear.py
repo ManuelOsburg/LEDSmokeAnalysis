@@ -21,7 +21,8 @@ class ExtinctionCoefficientsLinear(ExtinctionCoefficients):
     """
 
     def __init__(self, experiment, reference_property='sum_col_val', num_ref_imgs=10, average_images=False, ref_img_indices=None, lambda_reg=1e-3,
-                 auto_ref_imgs=False, ref_img_tolerance=DEFAULT_REF_IMG_TOLERANCE, num_ref_img_candidates=None):
+                 auto_ref_imgs=False, ref_img_tolerance=DEFAULT_REF_IMG_TOLERANCE, num_ref_img_candidates=None,
+                 **ref_img_options):
         """
         Initialize the ExtinctionCoefficientsLinear object.
 
@@ -43,9 +44,11 @@ class ExtinctionCoefficientsLinear(ExtinctionCoefficients):
         :type ref_img_tolerance: float
         :param num_ref_img_candidates: Number of candidate images of the automatic selection.
         :type num_ref_img_candidates: int or None
+        :param ref_img_options: Further options of the automatic selection (ref_img_led_deviation,
+            ref_img_led_fraction, ref_img_max_time, num_ref_img_min), see ExtinctionCoefficients.
         """
         super().__init__(experiment, reference_property, num_ref_imgs, ref_img_indices, average_images,
-                         auto_ref_imgs, ref_img_tolerance, num_ref_img_candidates)
+                         auto_ref_imgs, ref_img_tolerance, num_ref_img_candidates, **ref_img_options)
         self.lambda_reg = lambda_reg
         self.solver = 'linear'
 
