@@ -280,70 +280,57 @@ def create_binary_data(channel: int, path: str = '.') -> None:
     finally:
         os.chdir(prev_dir)
 
+# Column names of the step 3 result files (<img_id>_led_positions.csv). The files do not contain img_id, it is
+# prepended when they are loaded, so a file with n columns has n + 1 names.
+BASE_COLUMNS = ["img_id", "led_id", "led_array_id", "sum_col_val", "mean_col_val", "max_col_val"]
+BGSUB_COLUMNS = ["bgsub_sum_col_val"]
+SIDEBG_COLUMNS = ["sidebg_sum_col_val", "sidebg_pedestal", "bgsub2_sum_col_val"]
+LED_CENTER_COLUMNS = ["led_center_x", "led_center_y"]
+FIT_COLUMNS = ["x", "y", "dx", "dy", "A", "alpha", "wx", "wy", "fit_success", "fit_fun", "fit_nfev", "fit_time"]
+
+# known layouts by the number of names (including img_id)
+COLUMN_LAYOUTS = {
+    len(layout): layout for layout in [
+        BASE_COLUMNS,  # -s3_fast, before the local background subtraction
+        BASE_COLUMNS + BGSUB_COLUMNS,  # -s3_fast, before the side band pedestal
+        BASE_COLUMNS + BGSUB_COLUMNS + SIDEBG_COLUMNS,  # -s3_fast
+        BASE_COLUMNS + BGSUB_COLUMNS + LED_CENTER_COLUMNS + FIT_COLUMNS,  # -s3, before the side band pedestal
+        BASE_COLUMNS + BGSUB_COLUMNS + SIDEBG_COLUMNS + LED_CENTER_COLUMNS + FIT_COLUMNS,  # -s3
+    ]
+}
+# Fitted files written before the delimiter between the main and the fit part was added and before the local
+# background subtraction: max_col_value and led_center_x are glued into one field, so the file has one column less
+# and the names are shifted from there on. Later fitted files without the delimiter cannot be parsed at all.
+LEGACY_FIT_COLUMNS = BASE_COLUMNS + LED_CENTER_COLUMNS + FIT_COLUMNS[:-1]
+
+
 def _get_column_names(channel: int) -> List[str]:
     """
-    Get the column names for the specified channel based on the structure of the CSV files.
+    Get the column names for the specified channel from the number of columns of the CSV files.
 
     :param channel: Channel number for which column names are to be determined.
     :type channel: int
     :return: List of column names.
     :rtype: List[str]
+    :raises ValueError: If the number of columns matches no known layout.
     """
     file_path = os.path.join('analysis', f'channel{channel}', '1_led_positions.csv')
-    parameters = ledsa.core.file_handling.read_table(file_path, delim=',', silent=True)
-    header_columns = _get_main_column_names_from_header(file_path)
-    # files written since the side band pedestal was added name their columns in the header
-    if header_columns is not None and parameters.shape[1] >= len(header_columns):
-        columns = ["img_id"] + header_columns
-        if parameters.shape[1] > len(columns) - 1:
-            columns.extend(["led_center_x", "led_center_y"])
-            columns.extend(["x", "y", "dx", "dy", "A", "alpha", "wx", "wy", "fit_success", "fit_fun", "fit_nfev"])
-        columns.extend(["width", "height"])
-        return columns
-    columns = ["img_id", "led_id", "led_array_id",
-               "sum_col_val", "mean_col_val", "max_col_val"]
-    if parameters.shape[1] in (6, 20):  # files written since the local background subtraction was added
-        columns.append("bgsub_sum_col_val")
-    if parameters.shape[1] > len(columns):
-        columns.extend(["led_center_x", "led_center_y"])
-        columns.extend(["x", "y", "dx", "dy", "A", "alpha", "wx", "wy", "fit_success", "fit_fun", "fit_nfev"])
-    if parameters.shape[1] != len(columns) - 1:
+    parameters = ledsa.core.file_handling.read_table(file_path, delim=',', silent=True, atleast_2d=True)
+    num_names = parameters.shape[1] + 1  # + 1 for img_id, which is prepended on load
+    if num_names in COLUMN_LAYOUTS:
+        columns = list(COLUMN_LAYOUTS[num_names])
+    elif num_names == len(LEGACY_FIT_COLUMNS):
+        print(f"Warning: {file_path} was written with fits by an older LEDSA version, in which max_col_value and "
+              f"led_center_x are glued into one field. sum_col_val and mean_col_val are valid, max_col_val and all "
+              f"fit columns are not. Run step 3 again to obtain valid fit results.")
+        columns = list(LEGACY_FIT_COLUMNS)
+    else:
         columns = _get_old_columns(parameters)
+        if not columns:
+            raise ValueError(f"{file_path} has {parameters.shape[1]} columns, which matches no known layout of the "
+                             f"step 3 result files.")
     columns.extend(["width", "height"])
     return columns
-
-
-def _get_main_column_names_from_header(file_path: str) -> Union[List[str], None]:
-    """
-    Read the names of the main (non-fit) columns from the header of a step 3 result file.
-
-    Only files written since the side band pedestal was added are identified by their header, older files return
-    None and are handled by the column count. Header names are mapped to the names used in the binary file, e.g.
-    'sum_col_value' to 'sum_col_val' and 'average_col_value' to 'mean_col_val'.
-
-    :param file_path: Path of the step 3 result file.
-    :type file_path: str
-    :return: Column names starting with 'led_id' and 'led_array_id', or None for older files.
-    :rtype: List[str] or None
-    """
-    with open(file_path) as file:
-        for line in file:
-            if not line.startswith('#'):
-                break
-            names = [name.strip() for name in line.lstrip('#').split(',')]
-            if names[:2] != ['id', 'line'] or 'sidebg_sum_col_value' not in names:
-                continue
-            columns = ['led_id', 'led_array_id']
-            for name in names[2:]:
-                if name.startswith('led_center_x'):
-                    break
-                if name == 'average_col_value':
-                    name = 'mean_col_val'
-                elif name.endswith('_col_value'):
-                    name = name[:-len('ue')]
-                columns.append(name)
-            return columns
-    return None
 
 
 def _get_old_columns(params: np.ndarray) -> List[str]:
