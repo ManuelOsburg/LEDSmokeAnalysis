@@ -98,7 +98,7 @@ def test_write_ray_validity(tmp_path):
     data.to_hdf(tmp_path / 'analysis' / 'channel0' / 'all_parameters.h5', key='channel_values', format='table')
     write_ray_validity(0, lambda img_data: get_ref_img_ids(img_data.index.get_level_values("img_id"), 2), FLOOR,
                        path=str(tmp_path))
-    with open(tmp_path / 'analysis' / 'ray_validity_channel0.csv') as file:
+    with open(tmp_path / 'analysis' / 'ray_validity_channel0.csv', encoding='utf-8') as file:
         header = file.readline()
         table = pd.read_csv(file)
     assert 'reference images [1, 2]' in header

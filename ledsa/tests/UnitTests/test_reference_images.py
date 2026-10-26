@@ -182,7 +182,7 @@ class TestCommonSelection:
         ConfigDataStacked.create_template(filename=str(path))
         assert ConfigDataStacked(filename=str(path)).ref_img_common is False
         old = tmp_path / 'old.ini'
-        old.write_text('[DEFAULT]\nauto_ref_images = True\n')
+        old.write_text('[DEFAULT]\nauto_ref_images = True\n', encoding='utf-8')
         config = ConfigDataStacked(filename=str(old))
         assert config.ref_img_common is False
         assert config.ref_img_options['ref_img_led_fraction'] == 0.02
@@ -212,8 +212,8 @@ class TestReadOptions:
 
     def test_load_experiment_times(self, tmp_path):
         (tmp_path / 'analysis').mkdir()
-        (tmp_path / 'analysis' / 'image_infos_analysis.csv').write_text(
-            '#ID,Name,Time[s],Experiment_Time[s]\n1,a.CR3,10:00:00,-20.0\n2,b.CR3,10:00:05,-15.0\n')
+        img_infos = '#ID,Name,Time[s],Experiment_Time[s]\n1,a.CR3,10:00:00,-20.0\n2,b.CR3,10:00:05,-15.0\n'
+        (tmp_path / 'analysis' / 'image_infos_analysis.csv').write_text(img_infos, encoding='utf-8')
         times = load_experiment_times(tmp_path)
         assert times.to_dict() == {1: -20.0, 2: -15.0}
 

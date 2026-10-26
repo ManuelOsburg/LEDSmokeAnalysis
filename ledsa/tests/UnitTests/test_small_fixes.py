@@ -49,7 +49,7 @@ class TestStep3FastWithChannel:
                 pass
 
         monkeypatch.chdir(tmp_path)
-        (tmp_path / 'config.ini').write_text('[DEFAULT]\n')
+        (tmp_path / 'config.ini').write_text('[DEFAULT]\n', encoding='utf-8')
         monkeypatch.setattr(run, 'DataExtractor', FakeDataExtractor)
         parser = add_parser_arguments_data_extraction(argparse.ArgumentParser())
         run.run_data_extraction_arguments(parser.parse_args(['-s3_fast', '-g']))
@@ -67,9 +67,9 @@ class TestTimeAlignmentReport:
                                          get_num_simulations=lambda: 2)
         stacked.led_array_id = 0
         stacked.led_array_mapping = {0: 0, 1: 0}
-        stacked._sub_solvers = [SimpleNamespace(experiment=None, average_images=False)] * 2
+        stacked._sub_solvers = [SimpleNamespace(experiment=None, average_images=False, calculated_img_data=None)] * 2
         monkeypatch.setattr(StackedExtinctionCoefficients, '_load_time_map',
-                            staticmethod(lambda experiment, average_images: {1: 0.0, 2: 5.0}))
+                            staticmethod(lambda experiment, average_images, img_data=None: {1: 0.0, 2: 5.0}))
         return stacked
 
     def test_report_is_utf8_and_an_empty_report_is_written_again(self, tmp_path, monkeypatch):

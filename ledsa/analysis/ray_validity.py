@@ -128,7 +128,7 @@ def write_ray_validity(channel: int, ref_img_ids, floor: float, threshold: float
     header = (f'# ray validity, channel {channel}: reference images {list(map(int, ref_img_ids))}, '
               f'threshold {threshold}, min_optical_depth {min_optical_depth}, '
               f'sideband_uncertainty {sideband_uncertainty}, sideband_floor {floor}\n')
-    with open(out_file, 'w') as file:
+    with open(out_file, 'w', encoding='utf-8') as file:
         file.write(header)
         out.reset_index().to_csv(file, index=False, float_format='%.6g', lineterminator='\n')
     print(f'{out_file} written: {100 * validity.saturated_raw.mean():.1f} % of the rays saturated in the raw '

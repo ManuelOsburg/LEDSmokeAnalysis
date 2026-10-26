@@ -218,7 +218,7 @@ class TestSidebandParameters:
     def test_defaults_for_old_config(self, tmp_path, monkeypatch):
         from ledsa.core.ConfigData import ConfigData
         monkeypatch.chdir(tmp_path)
-        (tmp_path / 'config.ini').write_text('[DEFAULT]\nimg_directory = x\n[analyse_photo]\nnum_skip_leds = 0\n')
+        (tmp_path / 'config.ini').write_text('[DEFAULT]\nimg_directory = x\n[analyse_photo]\nnum_skip_leds = 0\n', encoding='utf-8')
         assert get_sideband_parameters(ConfigData()) == ((25, 60), 0.05, None)
 
     def test_values_from_config(self, tmp_path, monkeypatch):

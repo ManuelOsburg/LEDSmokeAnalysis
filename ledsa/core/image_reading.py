@@ -1,10 +1,24 @@
 import os
-from typing import Tuple
+from datetime import datetime, timedelta
+from typing import Callable, Tuple
 
 import exiv2
 import numpy as np
 import rawpy
 from matplotlib import pyplot as plt
+
+from ledsa.core.image_integrity import CorruptedImageError
+
+# The extension of a file is matched lowercased, because cameras and operating systems differ in
+# the case they write it in and Windows treats the two as the same file name anyway.
+IMG_FILE_EXTENSIONS = ['.jpg', '.jpeg', '.png']
+RAW_FILE_EXTENSIONS = ['.cr2', '.cr3', '.nef', '.arw', '.dng']
+
+# The EXIF timestamps themselves only have second resolution. Cameras store the fraction of the second in a
+# tag of its own, most of them as two digits, i.e. hundredths of a second.
+SUBSEC_TAGS = {'DateTimeOriginal': 'SubSecTimeOriginal',
+               'DateTimeDigitized': 'SubSecTimeDigitized'}
+EXIF_DATETIME_FORMATS = ['%Y:%m:%d %H:%M:%S', '%d.%m.%Y %H:%M:%S']
 
 
 def read_channel_data_from_img(filename: str, channel: int, black_level_per_channel: bool = False) -> np.ndarray:
@@ -21,15 +35,63 @@ def read_channel_data_from_img(filename: str, channel: int, black_level_per_chan
     :type black_level_per_channel: bool
     :return: A 2D array containing the processed image data for one channel.
     :rtype: np.ndarray
+    :raises CorruptedImageError: If the image cannot be read or has an unsupported file extension.
     """
-    extension = os.path.splitext(filename)[-1]
-    if extension in ['.JPG', '.JPEG', '.jpg', '.jpeg', '.PNG', '.png']:
-        channel_array = _read_channel_data_from_img_file(filename, channel)
-    elif extension in ['.CR2', '.CR3', '.NEF', '.ARW', '.DNG']:
-        channel_array = _read_channel_data_from_raw_file(filename, channel, black_level_per_channel)
-    else:
-        raise ValueError(f"Unsupported image format '{extension}' of file {filename}.")
-    return channel_array
+    def read_raw_file(raw_filename, raw_channel):
+        return _read_channel_data_from_raw_file(raw_filename, raw_channel, black_level_per_channel)
+
+    reader = _get_reader(filename, _read_channel_data_from_img_file, read_raw_file)
+    return _read_or_raise(filename, reader, channel)
+
+
+def read_channel_data_and_mask_from_img(filename: str, channel: int,
+                                        black_level_per_channel: bool = False) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Returns the same 2D channel array as read_channel_data_from_img together with a boolean mask of the
+    pixels that belong to the selected color channel.
+
+    For RAW files the mask is taken from the Bayer filter pattern (raw_colors_visible) and not from the pixel
+    values, because pixels of the selected channel can be 0 as well (noise clipped at 0 after the black level
+    subtraction). For JPG/PNG files every pixel belongs to the channel.
+
+    :param filename: The path of the image file to read.
+    :type filename: str
+    :param channel: The color channel to process.
+    :type channel: int
+    :param black_level_per_channel: RAW files only, see _read_img_array_from_raw_file. Defaults to False.
+    :type black_level_per_channel: bool
+    :return: The channel array and the boolean channel mask of the same shape.
+    :rtype: tuple[np.ndarray, np.ndarray]
+    :raises CorruptedImageError: If the image cannot be read or has an unsupported file extension.
+    """
+    def read_img_file(img_filename, img_channel):
+        channel_array = _read_channel_data_from_img_file(img_filename, img_channel)
+        return channel_array, np.ones(channel_array.shape, dtype=bool)
+
+    def read_raw_file(raw_filename, raw_channel):
+        img_array, filter_array = _read_img_array_from_raw_file(raw_filename, raw_channel, black_level_per_channel)
+        channel_mask = get_bayer_channel_mask(filter_array, raw_channel)
+        return np.where(channel_mask, img_array, 0), channel_mask
+
+    reader = _get_reader(filename, read_img_file, read_raw_file)
+    return _read_or_raise(filename, reader, channel)
+
+
+def get_bayer_channel_mask(filter_array: np.ndarray, channel: int) -> np.ndarray:
+    """
+    Returns a boolean mask of the Bayer filter positions that belong to the given color channel.
+    The Bayer array contains two green channels (1 and 3), one red (0) and one blue (2).
+
+    :param filter_array: Bayer filter pattern of the raw image (rawpy raw_colors_visible).
+    :type filter_array: np.ndarray
+    :param channel: The color channel (0 red, 1 green, 2 blue).
+    :type channel: int
+    :return: Boolean mask, True where the pixel belongs to the channel.
+    :rtype: np.ndarray
+    """
+    if channel == 1:
+        return (filter_array == 1) | (filter_array == 3)
+    return filter_array == channel
 
 def read_img_array_from_img(filename: str, channel: int) -> np.ndarray:
     """
@@ -42,15 +104,63 @@ def read_img_array_from_img(filename: str, channel: int) -> np.ndarray:
     :type channel: int
     :return: A 2D array containing the processed image data for all color channels.
     :rtype: np.ndarray
+    :raises CorruptedImageError: If the image cannot be read or has an unsupported file extension.
+    """
+    def read_raw_file(raw_filename, raw_channel):
+        img_array, _ = _read_img_array_from_raw_file(raw_filename, raw_channel)
+        return img_array
+
+    reader = _get_reader(filename, lambda img_filename, _: _read_grayscale_img_array_from_img_file(img_filename),
+                         read_raw_file)
+    return _read_or_raise(filename, reader, channel)
+
+
+def _get_reader(filename: str, img_file_reader: Callable, raw_file_reader: Callable) -> Callable:
+    """
+    Select the reader matching the file extension of an image.
+
+    :param filename: The path of the image file to read.
+    :type filename: str
+    :param img_file_reader: Reader used for the JPG and PNG file extensions.
+    :type img_file_reader: Callable
+    :param raw_file_reader: Reader used for the RAW file extensions.
+    :type raw_file_reader: Callable
+    :return: The reader matching the file extension.
+    :rtype: Callable
+    :raises CorruptedImageError: If the file extension is not supported by LEDSA.
     """
     extension = os.path.splitext(filename)[-1]
-    if extension in ['.JPG', '.JPEG', '.jpg', '.jpeg', '.PNG', '.png']:
-        img_array = _read_grayscale_img_array_from_img_file(filename)
-    elif extension in ['.CR2', '.CR3', '.NEF', '.ARW', '.DNG']:
-        img_array, _ = _read_img_array_from_raw_file(filename, channel)
-    else:
-        raise ValueError(f"Unsupported image format '{extension}' of file {filename}.")
-    return img_array
+    if extension.lower() in IMG_FILE_EXTENSIONS:
+        return img_file_reader
+    if extension.lower() in RAW_FILE_EXTENSIONS:
+        return raw_file_reader
+    supported = ', '.join(IMG_FILE_EXTENSIONS + RAW_FILE_EXTENSIONS)
+    raise CorruptedImageError(filename, message=f"unsupported file extension '{extension}', "
+                                                f"LEDSA can read {supported} in any case")
+
+
+def _read_or_raise(filename: str, reader: Callable, channel: int) -> np.ndarray:
+    """
+    Read an image and translate every error of the imaging library into a CorruptedImageError.
+
+    The imaging libraries report a missing, empty, truncated or mistyped file through a wide range of error
+    types, so they are caught collectively and reported with their original type and message, which keeps
+    the cause of the problem visible in 'analysis/corrupted_images.csv'.
+
+    :param filename: The path of the image file to read.
+    :type filename: str
+    :param reader: Reader matching the file extension of the image.
+    :type reader: Callable
+    :param channel: The color channel to process.
+    :type channel: int
+    :return: The image data returned by the reader.
+    :rtype: np.ndarray
+    :raises CorruptedImageError: If the reader fails on the image.
+    """
+    try:
+        return reader(filename, channel)
+    except Exception as error:
+        raise CorruptedImageError(filename, error) from error
 
 
 def _read_channel_data_from_img_file(filename: str, channel: int) -> np.ndarray:
@@ -88,55 +198,6 @@ def _read_channel_data_from_raw_file(filename: str, channel: int, black_level_pe
     elif channel == 1:
         channel_array = np.where((filter_array == 1) | (filter_array == 3), img_array, 0)
     return channel_array
-
-
-def read_channel_data_and_mask_from_img(filename: str, channel: int,
-                                        black_level_per_channel: bool = False) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Returns the same 2D channel array as read_channel_data_from_img together with a boolean mask of the
-    pixels that belong to the selected color channel.
-
-    For RAW files the mask is taken from the Bayer filter pattern (raw_colors_visible) and not from the pixel
-    values, because pixels of the selected channel can be 0 as well (noise clipped at 0 after the black level
-    subtraction). For JPG/PNG files every pixel belongs to the channel.
-
-    :param filename: The path of the image file to read.
-    :type filename: str
-    :param channel: The color channel to process.
-    :type channel: int
-    :param black_level_per_channel: RAW files only, see _read_img_array_from_raw_file. Defaults to False.
-    :type black_level_per_channel: bool
-    :return: The channel array and the boolean channel mask of the same shape.
-    :rtype: tuple[np.ndarray, np.ndarray]
-    """
-    extension = os.path.splitext(filename)[-1]
-    if extension in ['.JPG', '.JPEG', '.jpg', '.jpeg', '.PNG', '.png']:
-        channel_array = _read_channel_data_from_img_file(filename, channel)
-        channel_mask = np.ones(channel_array.shape, dtype=bool)
-    elif extension in ['.CR2', '.CR3', '.NEF', '.ARW', '.DNG']:
-        img_array, filter_array = _read_img_array_from_raw_file(filename, channel, black_level_per_channel)
-        channel_mask = get_bayer_channel_mask(filter_array, channel)
-        channel_array = np.where(channel_mask, img_array, 0)
-    else:
-        raise ValueError(f"Unsupported image format '{extension}' of file {filename}.")
-    return channel_array, channel_mask
-
-
-def get_bayer_channel_mask(filter_array: np.ndarray, channel: int) -> np.ndarray:
-    """
-    Returns a boolean mask of the Bayer filter positions that belong to the given color channel.
-    The Bayer array contains two green channels (1 and 3), one red (0) and one blue (2).
-
-    :param filter_array: Bayer filter pattern of the raw image (rawpy raw_colors_visible).
-    :type filter_array: np.ndarray
-    :param channel: The color channel (0 red, 1 green, 2 blue).
-    :type channel: int
-    :return: Boolean mask, True where the pixel belongs to the channel.
-    :rtype: np.ndarray
-    """
-    if channel == 1:
-        return (filter_array == 1) | (filter_array == 3)
-    return filter_array == channel
 
 
 def _read_img_array_from_raw_file(filename: str, channel: int, black_level_per_channel: bool = False) -> np.ndarray:
@@ -198,14 +259,120 @@ def get_exif_entry(filename: str, tag: str) -> str:
     :type tag: str
     :return: The value(s) associated with the given EXIF tag.
     :rtype: str
-    :raises KeyError: If the EXIF tag is not found in the image metadata.
+    :raises CorruptedImageError: If the metadata of the image cannot be read or does not contain the tag.
     """
-    img = exiv2.ImageFactory.open(filename)
-    img.readMetadata()
-    exiv_data = img.exifData()
-    full_tag = f'Exif.Photo.{tag}'
+    img, exif_data = _read_exif_data(filename)  # img keeps exif_data alive
+    return _find_exif_entry(exif_data, filename, tag)
+
+
+def get_exif_datetime(filename: str, tag: str = 'DateTimeOriginal') -> datetime:
+    """
+    Retrieves an EXIF timestamp of an image with sub-second resolution.
+
+    EXIF stores the timestamps with second resolution only, so images taken less than a second apart would
+    carry the same time. The fraction of the second is kept in a separate entry, which is added here if the
+    camera wrote one.
+
+    :param filename: The path of the image file to read.
+    :type filename: str
+    :param tag: The EXIF timestamp to fetch. Defaults to 'DateTimeOriginal'.
+    :type tag: str
+    :return: The timestamp, including the sub-second part if the camera recorded one.
+    :rtype: datetime.datetime
+    :raises CorruptedImageError: If the metadata of the image cannot be read, does not contain the timestamp
+                                 or contains it in an unknown format.
+    """
+    img, exif_data = _read_exif_data(filename)  # img keeps exif_data alive
+    entry = _find_exif_entry(exif_data, filename, tag)
+    date_time = _parse_exif_datetime(entry, filename, tag)
+    subsec_tag = SUBSEC_TAGS.get(tag)
+    if subsec_tag is None:
+        return date_time
+    subsec_entry = _find_exif_entry(exif_data, filename, subsec_tag, required=False)
+    return date_time + timedelta(seconds=_subsec_entry_to_seconds(subsec_entry))
+
+
+def _read_exif_data(filename: str) -> Tuple['exiv2.Image', 'exiv2.ExifData']:
+    """
+    Open an image and return it together with its EXIF metadata.
+
+    The image is returned as well because the metadata is only a view into it, which stays valid as long as
+    the image object is referenced.
+
+    :param filename: The path of the image file to read.
+    :type filename: str
+    :return: The opened image and its EXIF metadata.
+    :rtype: Tuple[exiv2.Image, exiv2.ExifData]
+    :raises CorruptedImageError: If the metadata of the image cannot be read.
+    """
     try:
-        return exiv_data[full_tag].print()
-    except KeyError:
-        print("No EXIF metadata found")
-        exit(1)
+        img = exiv2.ImageFactory.open(filename)
+        img.readMetadata()
+        return img, img.exifData()
+    except Exception as error:
+        raise CorruptedImageError(filename, error) from error
+
+
+def _find_exif_entry(exif_data: 'exiv2.ExifData', filename: str, tag: str, required: bool = True) -> str:
+    """
+    Look up a single entry in the EXIF metadata of an image.
+
+    :param exif_data: The EXIF metadata to search.
+    :type exif_data: exiv2.ExifData
+    :param filename: The path of the image the metadata belongs to, used for error messages.
+    :type filename: str
+    :param tag: The EXIF metadata tag to fetch.
+    :type tag: str
+    :param required: Whether a missing entry is an error instead of an empty value.
+    :type required: bool
+    :return: The value(s) associated with the given EXIF tag, or an empty string if an optional tag is not set.
+    :rtype: str
+    :raises CorruptedImageError: If a required tag is not set.
+    """
+    full_tag = f'Exif.Photo.{tag}'
+    entry = exif_data.findKey(exiv2.ExifKey(full_tag))
+    if entry == exif_data.end():
+        if required:
+            raise CorruptedImageError(filename, message=f'no EXIF entry {full_tag} found')
+        return ''
+    return entry.print()
+
+
+def _parse_exif_datetime(entry: str, filename: str, tag: str) -> datetime:
+    """
+    Convert an EXIF timestamp entry into a datetime object.
+
+    :param entry: The value of the EXIF timestamp.
+    :type entry: str
+    :param filename: The path of the image the timestamp belongs to, used for error messages.
+    :type filename: str
+    :param tag: The EXIF metadata tag the timestamp was read from, used for error messages.
+    :type tag: str
+    :return: The corresponding datetime object.
+    :rtype: datetime.datetime
+    :raises CorruptedImageError: If the timestamp is not in one of the known formats.
+    """
+    for datetime_format in EXIF_DATETIME_FORMATS:
+        try:
+            return datetime.strptime(entry.strip(), datetime_format)
+        except ValueError:
+            continue
+    raise CorruptedImageError(filename, message=f'EXIF entry Exif.Photo.{tag} is not a timestamp: {entry}')
+
+
+def _subsec_entry_to_seconds(entry: str) -> float:
+    """
+    Convert a SubSecTime entry into a fraction of a second.
+
+    The entry holds the digits behind the decimal point, so '07' means 0.07 s. How many digits a camera
+    writes differs between models, and cameras which do not record the fraction leave the entry empty.
+
+    :param entry: The value of the SubSecTime entry.
+    :type entry: str
+    :return: The fraction of the second in seconds, 0.0 if the entry holds no digits.
+    :rtype: float
+    """
+    digits = entry.strip(' \t\r\n\x00')
+    if not digits.isdigit():
+        return 0.0
+    return float(f'0.{digits}')

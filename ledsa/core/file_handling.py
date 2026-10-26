@@ -6,6 +6,7 @@ import pandas as pd
 
 import ledsa.core
 from ledsa.core.ConfigData import ConfigData
+from ledsa.core.image_integrity import CORRUPTED_IMAGES_FILE_PATH
 
 
 def set_flag(flag: str) -> None:
@@ -15,7 +16,7 @@ def set_flag(flag: str) -> None:
     :param flag: The name of the flag to set.
     :type flag: str
     """
-    with open(f'.{flag}.flag', 'w') as flag_file:
+    with open(f'.{flag}.flag', 'w', encoding='utf-8') as flag_file:
         pass
 
 
@@ -225,6 +226,7 @@ def create_binary_data(channel: int, path: str = '.') -> None:
     :type channel: int
     :param path: Root directory of the LEDSA simulation. Defaults to the current directory.
     :type path: str
+    :raises ValueError: If not a single image of the channel has analysis results.
     """
     prev_dir = os.getcwd()
     try:
@@ -233,8 +235,6 @@ def create_binary_data(channel: int, path: str = '.') -> None:
         columns = _get_column_names(channel)
 
         fit_params_list = []
-
-        fit_params = pd.DataFrame(columns=columns)
 
         # find time and fit parameter for every image
 
@@ -248,18 +248,16 @@ def create_binary_data(channel: int, path: str = '.') -> None:
         number_of_images = (max_id + last_img_id - first_img_id) % max_id + 1
         number_of_images //= int(config['analyse_photo']['num_skip_imgs']) + 1
         print('Loading fit parameters...')
-        exception_counter = 0
+        skipped_img_ids = []
         for image_id in range(1, number_of_images + 1):
             try:
                 in_file_path = os.path.join('analysis', f'channel{channel}', f'{image_id}_led_positions.csv')
                 parameters = ledsa.core.file_handling.read_table(in_file_path, delim=',', silent=True)
             except (FileNotFoundError, IOError):
-                fit_params_fragment = fit_params.append(
-                    _param_array_to_dataframe([[np.nan] * (fit_params.shape[1] - 1)], image_id,
-                                              columns),
-                    ignore_index=True, sort=False)
-                fit_params_list.append(fit_params_fragment)
-                exception_counter += 1
+                # A missing result file means the image was not analysed, for example because it could not be
+                # read. The image is left out entirely instead of being filled with NaNs, so that the
+                # extinction coefficients are never computed from them.
+                skipped_img_ids.append(image_id)
                 continue
 
             parameters = parameters[parameters[:, 0].argsort()]  # sort for led_id
@@ -267,9 +265,16 @@ def create_binary_data(channel: int, path: str = '.') -> None:
             fit_params_fragment = _param_array_to_dataframe(parameters, image_id, columns)
             fit_params_list.append(fit_params_fragment)
 
+        if not fit_params_list:
+            raise ValueError(f'None of the {number_of_images} images of channel {channel} has analysis '
+                             f'results. Run the data extraction (-s3 or -s3_fast) before the analysis.')
         fit_params = pd.concat(fit_params_list, ignore_index=True, sort=False)
 
-        print(f'{number_of_images - exception_counter} of {number_of_images} loaded.')
+        print(f'{number_of_images - len(skipped_img_ids)} of {number_of_images} loaded.')
+        if skipped_img_ids:
+            print(f'No analysis results for the image IDs {skipped_img_ids}, so they are left out of the '
+                  f'extinction coefficients. Images that could not be read are listed in '
+                  f'{CORRUPTED_IMAGES_FILE_PATH}.')
         fit_params['img_id'] = fit_params['img_id'].astype(int)
         fit_params['led_id'] = fit_params['led_id'].astype(int)
         fit_params['led_array_id'] = fit_params['led_array_id'].astype(int)
@@ -290,17 +295,16 @@ FIT_COLUMNS = ["x", "y", "dx", "dy", "A", "alpha", "wx", "wy", "fit_success", "f
 
 # known layouts by the number of names (including img_id)
 COLUMN_LAYOUTS = {
-    len(layout): layout for layout in [
-        BASE_COLUMNS,  # -s3_fast, before the local background subtraction
-        BASE_COLUMNS + BGSUB_COLUMNS,  # -s3_fast, before the side band pedestal
-        BASE_COLUMNS + BGSUB_COLUMNS + SIDEBG_COLUMNS,  # -s3_fast
-        BASE_COLUMNS + BGSUB_COLUMNS + LED_CENTER_COLUMNS + FIT_COLUMNS,  # -s3, before the side band pedestal
-        BASE_COLUMNS + BGSUB_COLUMNS + SIDEBG_COLUMNS + LED_CENTER_COLUMNS + FIT_COLUMNS,  # -s3
-    ]
+    len(BASE_COLUMNS): BASE_COLUMNS,  # -s3_fast, before the local background subtraction
+    len(BASE_COLUMNS + BGSUB_COLUMNS): BASE_COLUMNS + BGSUB_COLUMNS,  # -s3_fast, before the side band pedestal
+    len(BASE_COLUMNS + BGSUB_COLUMNS + SIDEBG_COLUMNS): BASE_COLUMNS + BGSUB_COLUMNS + SIDEBG_COLUMNS,  # -s3_fast
+    len(BASE_COLUMNS + BGSUB_COLUMNS + LED_CENTER_COLUMNS + FIT_COLUMNS):
+        BASE_COLUMNS + BGSUB_COLUMNS + LED_CENTER_COLUMNS + FIT_COLUMNS,  # -s3 with fit, before the side band pedestal
+    len(BASE_COLUMNS + BGSUB_COLUMNS + SIDEBG_COLUMNS + LED_CENTER_COLUMNS + FIT_COLUMNS):
+        BASE_COLUMNS + BGSUB_COLUMNS + SIDEBG_COLUMNS + LED_CENTER_COLUMNS + FIT_COLUMNS,  # -s3 with fit
 }
-# Fitted files written before the delimiter between the main and the fit part was added and before the local
-# background subtraction: max_col_value and led_center_x are glued into one field, so the file has one column less
-# and the names are shifted from there on. Later fitted files without the delimiter cannot be parsed at all.
+# Fitted files written before the delimiter between the main and the fit part was added: max_col_value and
+# led_center_x are glued into one field, so the file has one column less and the names are shifted from there on.
 LEGACY_FIT_COLUMNS = BASE_COLUMNS + LED_CENTER_COLUMNS + FIT_COLUMNS[:-1]
 
 
@@ -312,10 +316,16 @@ def _get_column_names(channel: int) -> List[str]:
     :type channel: int
     :return: List of column names.
     :rtype: List[str]
-    :raises ValueError: If the number of columns matches no known layout.
+    :raises ValueError: If the file cannot be parsed or the number of columns matches no known layout.
     """
     file_path = os.path.join('analysis', f'channel{channel}', '1_led_positions.csv')
-    parameters = ledsa.core.file_handling.read_table(file_path, delim=',', silent=True, atleast_2d=True)
+    try:
+        parameters = ledsa.core.file_handling.read_table(file_path, delim=',', silent=True, atleast_2d=True)
+    except ValueError as error:
+        # fitted files written with bgsub_sum_col_value but before the delimiter fix glue two floats into one field
+        raise ValueError(f"{file_path} cannot be read ({error}). If it was written with fits by a LEDSA version "
+                         f"that had bgsub_sum_col_value but no delimiter between the main and the fit columns, "
+                         f"bgsub_sum_col_value and led_center_x are glued into one field. Run step 3 again.") from error
     num_names = parameters.shape[1] + 1  # + 1 for img_id, which is prepended on load
     if num_names in COLUMN_LAYOUTS:
         columns = list(COLUMN_LAYOUTS[num_names])

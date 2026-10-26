@@ -99,7 +99,7 @@ class TestColumnNames:
         channel_dir = tmp_path / 'analysis' / 'channel0'
         channel_dir.mkdir(parents=True)
         row = ','.join(str(float(i)) for i in range(num_columns))
-        (channel_dir / '1_led_positions.csv').write_text(f'{header}\n{row}\n{row}\n')
+        (channel_dir / '1_led_positions.csv').write_text(f'{header}\n{row}\n{row}\n', encoding='utf-8')
 
     def test_csv_written_by_step_3_without_fit(self, tmp_path, monkeypatch):
         from ledsa.core.file_handling import _get_column_names
@@ -147,15 +147,16 @@ class TestColumnNames:
         led_data.fit_time = 0.25
         channel_dir = tmp_path / 'analysis' / 'channel0'
         channel_dir.mkdir(parents=True)
-        (channel_dir / '1_led_positions.csv').write_text(f'# header\n{led_data}{led_data}')
+        (channel_dir / '1_led_positions.csv').write_text(f'# header\n{led_data}{led_data}', encoding='utf-8')
         monkeypatch.chdir(tmp_path)
         columns = _get_column_names(0)
         values = np.loadtxt(channel_dir / '1_led_positions.csv', delimiter=',')[0]
         assert len(columns) - 2 == len(values) + 1  # width/height appended, img_id prepended on load
         named = dict(zip(columns[1:], values))
         assert named['max_col_val'] == 232
-        assert named['bgsub2_sum_col_val'] == pytest.approx(39500.0)
+        assert named['bgsub_sum_col_val'] == pytest.approx(40000.0)
         assert named['sidebg_pedestal'] == pytest.approx(2210.0)
+        assert named['bgsub2_sum_col_val'] == pytest.approx(39500.0)
         assert named['led_center_x'] == pytest.approx(50.521)
         assert named['A'] == pytest.approx(5.5)
         assert named['fit_nfev'] == 120
@@ -173,6 +174,18 @@ class TestColumnNames:
         assert main[-1] == last_main
         if num_columns > 9:
             assert columns[-3:] == ['fit_time', 'width', 'height']
+
+    def test_fitted_csv_without_delimiter_raises_with_hint(self, tmp_path, monkeypatch):
+        # fitted files of this branch written before the delimiter fix: bgsub_sum_col_value and led_center_x glued
+        from ledsa.core.file_handling import _get_column_names
+        fields = ['3', '0', '4.1210e+04', '1.0300e+02', '232', '4.1210e+04', '5.0521e+01'] + ['1.0'] * 13
+        row = ','.join(fields[:5]) + ',' + fields[5] + ','.join(fields[6:])
+        channel_dir = tmp_path / 'analysis' / 'channel0'
+        channel_dir.mkdir(parents=True)
+        (channel_dir / '1_led_positions.csv').write_text(f'# header\n{row}\n{row}\n', encoding='utf-8')
+        monkeypatch.chdir(tmp_path)
+        with pytest.raises(ValueError, match='glued into one field. Run step 3 again'):
+            _get_column_names(0)
 
     def test_legacy_fitted_csv(self, tmp_path, monkeypatch, capsys):
         # fitted files written before the delimiter fix have 18 columns; read as before, with a warning
@@ -196,7 +209,7 @@ class TestColumnNames:
         assert columns[:4] == first_names
         assert len(columns) == num_columns + 1 + 2
 
-    @pytest.mark.parametrize('num_columns', [7, 19, 22])
+    @pytest.mark.parametrize('num_columns', [7, 19, 21, 22])
     def test_unknown_layout_raises(self, tmp_path, monkeypatch, num_columns):
         from ledsa.core.file_handling import _get_column_names
         self._write_led_positions_csv(tmp_path, num_columns)
